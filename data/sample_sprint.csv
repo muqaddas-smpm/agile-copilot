@@ -1,0 +1,4 @@
+issue_key,summary,assignee,status,story_points,labels,created,updated
+PROJ-12,Add login flow,Sara,Done,5,feature;ui,2025-09-01,2025-09-07
+PROJ-13,Payment API,Adam,In Progress,8,backend,2025-09-02,2025-09-10
+PROJ-14,Fix bug,Muqaddas,Blocked,3,bug;blocked,2025-09-03,2025-09-11
