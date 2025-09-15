@@ -1,0 +1,20 @@
+{
+  "name": "agile-copilot",
+  "version": "1.0.0",
+  "description": "AI Agile Copilot MVP: CSV -> Sprint report/Exec summary/Standup.",
+  "main": "server/index.js",
+  "license": "MIT",
+  "scripts": {
+    "dev": "nodemon server/index.js",
+    "start": "node server/index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "csv-parse": "^6.1.0",
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}

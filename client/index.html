@@ -5,18 +5,20 @@
   <title>Agile Copilot — CSV Uploader</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: system-ui, Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 16px; }
+    body { font-family: system-ui, Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 16px; }
     h1 { margin-bottom: 8px; }
     .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin-top: 16px; }
     .row { margin: 6px 0; }
     pre { background: #f7f7f7; padding: 12px; border-radius: 8px; overflow:auto; }
     button { padding: 10px 16px; border-radius: 8px; border: 1px solid #ccc; cursor: pointer; }
     button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
   <h1>Agile Copilot — Upload Sprint CSV</h1>
-  <p>Pick your <code>sample_sprint.csv</code> and click Upload to preview the first lines.</p>
+  <p>Pick your <code>sample_sprint.csv</code> and click Upload to see a preview and metrics.</p>
 
   <div class="card">
     <div class="row">
@@ -26,9 +28,16 @@
     <div class="row" id="status"></div>
   </div>
 
-  <div class="card">
-    <h3>Preview</h3>
-    <pre id="previewArea">(no data yet)</pre>
+  <div class="grid">
+    <div class="card">
+      <h3>Preview (first rows)</h3>
+      <pre id="previewArea">(no data yet)</pre>
+    </div>
+
+    <div class="card">
+      <h3>Metrics</h3>
+      <pre id="metricsArea">(no metrics yet)</pre>
+    </div>
   </div>
 
   <script>
@@ -36,8 +45,10 @@
     const fileInput = document.getElementById('fileInput');
     const statusDiv = document.getElementById('status');
     const previewArea = document.getElementById('previewArea');
+    const metricsArea = document.getElementById('metricsArea');
 
-    const API_BASE = 'http://127.0.0.1:3000';
+    // Using port 3001 to match the server change
+    const API_BASE = 'http://127.0.0.1:3001';
 
     uploadBtn.addEventListener('click', async () => {
       const file = fileInput.files[0];
@@ -45,21 +56,39 @@
         statusDiv.textContent = 'Please choose a CSV file first.';
         return;
       }
+
       uploadBtn.disabled = true;
       statusDiv.textContent = 'Uploading...';
 
       try {
         const form = new FormData();
         form.append('file', file);
-        const res = await fetch(`${API_BASE}/upload-csv`, { method: 'POST', body: form });
+
+        const res = await fetch(`${API_BASE}/upload-csv`, {
+          method: 'POST',
+          body: form
+        });
+
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
 
-        // Normalize CRLF → LF & show clean preview
-        const cleaned = (json.preview || []).map(line => line.replace(/\r/g, ''));
-        previewArea.textContent = cleaned.join('\n');
+        // ---- Preview (from parsed sample rows) ----
+        if (Array.isArray(json.sample) && json.sample.length) {
+          const lines = json.sample.map(row => Object.values(row).join(', '));
+          previewArea.textContent = lines.join('\n');
+        } else if (Array.isArray(json.preview)) {
+          const cleaned = json.preview.map(l => String(l).replace(/\r/g, ''));
+          previewArea.textContent = cleaned.join('\n');
+        } else {
+          previewArea.textContent = '(no preview)';
+        }
 
-        statusDiv.textContent = `✅ ${json.message} — ${json.originalName}`;
+        // ---- Metrics ----
+        metricsArea.textContent = json.metrics
+          ? JSON.stringify(json.metrics, null, 2)
+          : '(no metrics returned)';
+
+        statusDiv.textContent = `✅ ${json.message || 'Upload complete'} — ${json.originalName || ''}`;
       } catch (err) {
         console.error(err);
         statusDiv.textContent = '❌ Upload failed. See console for details.';
