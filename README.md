@@ -131,9 +131,9 @@ Return Markdown only.
 - Reassign unowned tasks and confirm owners in today's standup.
 
 **Slack standup lines**
-@Aisha — Completed: payment integration; In progress: UI tests; Blocked: none.
-@Bilal — Completed: API endpoint; In progress: bugfix PROJ-123; Blocked: needs backend review.
-@Sara — Completed: docs; In progress: regression tests; Blocked: waiting on infra.
+@Sara — Completed: payment integration; In progress: UI tests; Blocked: none.
+@Adam — Completed: API endpoint; In progress: bugfix PROJ-123; Blocked: needs backend review.
+@Muqaddas — Completed: docs; In progress: regression tests; Blocked: waiting on infra.
 ```
 
 ---
