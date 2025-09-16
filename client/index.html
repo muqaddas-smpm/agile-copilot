@@ -1,278 +1,107 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Agile Copilot — CSV Uploader</title>
+  <meta charset="utf-8" />
+  <title>Agile Copilot — Day 7 (Polish & Usability)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    :root { --card: #f9fafb; --border: #e5e7eb; }
-    body { font-family: system-ui, Arial, sans-serif; max-width: 1100px; margin: 40px auto; padding: 0 16px; }
-    h1 { margin-bottom: 8px; }
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-top: 16px; }
-    .row { margin: 6px 0; }
-    pre { background: #fff; padding: 12px; border: 1px solid var(--border); border-radius: 8px; overflow:auto; white-space: pre-wrap; }
-    button { padding: 10px 16px; border-radius: 8px; border: 1px solid #ccc; cursor: pointer; background: #fff; }
-    button:disabled { opacity: 0.6; cursor: not-allowed; }
-    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
-    @media (max-width: 1050px) { .grid3 { grid-template-columns: 1fr; } }
-    @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
-    .muted { color: #6b7280; }
-  </style>
-  <!-- Chart.js via CDN (no local install needed) -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Styles -->
+  <link rel="stylesheet" href="styles.css" />
+  <!-- CSV parser (free CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <!-- Charts (free CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
-  <h1>Agile Copilot — Upload Sprint CSV</h1>
-  <p>Upload <code>sample_sprint.csv</code> → see metrics → generate AI reports → download.</p>
-
-  <div class="card">
-    <div class="row">
-      <input type="file" id="fileInput" accept=".csv" />
-      <button id="uploadBtn">Upload</button>
-      <button id="reportBtn" disabled>Generate Reports</button>
-      <button id="downloadTxtBtn" disabled>Download Report (.txt)</button>
+  <header class="topbar">
+    <h1>Agile Copilot — Safe Mode</h1>
+    <div class="actions">
+      <button id="btnClearAll" class="btn secondary" title="Reset the page to initial state">Clear All</button>
+      <button id="btnExportMd" class="btn" title="Export report as Markdown (.md)">Export Markdown</button>
     </div>
-    <div class="row muted" id="status"></div>
-  </div>
+  </header>
 
-  <div class="grid2">
-    <div class="card">
-      <h3>Preview (first rows)</h3>
-      <pre id="previewArea">(no data yet)</pre>
-    </div>
-
-    <div class="card">
-      <h3>Metrics</h3>
-      <pre id="metricsArea">(no metrics yet)</pre>
-    </div>
-  </div>
-
-  <div class="card">
-    <h3>Charts</h3>
-    <div class="grid3">
-      <div>
-        <h4>Velocity (Story Points)</h4>
-        <canvas id="velocityChart" height="200"></canvas>
+  <main class="container">
+    <!-- Upload -->
+    <section class="card">
+      <h3>Upload Sprint CSV</h3>
+      <div class="row">
+        <input type="file" id="fileInput" accept=".csv" />
       </div>
-      <div>
-        <h4>Workload by Assignee (Issues)</h4>
-        <canvas id="workloadChart" height="200"></canvas>
+      <div class="meta">
+        <div><strong>File:</strong> <span id="fileName">—</span></div>
+        <div><strong>Uploaded:</strong> <span id="uploadedAt">—</span></div>
       </div>
-      <div>
-        <h4>Status Distribution</h4>
-        <canvas id="statusChart" height="200"></canvas>
+      <p class="hint">Tip: re-upload to compute new metrics and auto-save to History (local only).</p>
+    </section>
+
+    <!-- Tabs -->
+    <section class="tabs">
+      <button class="tab active" data-tab="reports">Reports</button>
+      <button class="tab" data-tab="history">History</button>
+    </section>
+
+    <!-- Reports -->
+    <section id="tab-reports" class="tabpanel active">
+      <div class="grid">
+        <div class="card">
+          <h4>Executive Summary</h4>
+          <p id="execSummary">(no report yet)</p>
+        </div>
+
+        <div class="card">
+          <h4>Metrics</h4>
+          <ul id="metricsList"></ul>
+        </div>
+
+        <div class="card">
+          <h4>Observations</h4>
+          <p id="observations">(no report yet)</p>
+        </div>
+
+        <div class="card">
+          <h4>Recommended Next Actions</h4>
+          <ol id="nextActions"></ol>
+        </div>
+
+        <div class="card">
+          <h4>Velocity</h4>
+          <canvas id="velocityChart"></canvas>
+          <p class="hint" id="velocityHint"></p>
+        </div>
+
+        <div class="card">
+          <h4>Points by Status</h4>
+          <canvas id="statusChart"></canvas>
+        </div>
       </div>
-    </div>
-  </div>
+    </section>
 
-  <div class="card">
-    <h3>AI Reports</h3>
-    <h4>Sprint Summary</h4>
-    <pre id="sprintSummary">(no report yet)</pre>
-    <h4>Executive Summary</h4>
-    <pre id="execSummary">(no report yet)</pre>
-    <h4>Standup Draft</h4>
-    <pre id="standupDraft">(no report yet)</pre>
-  </div>
+    <!-- History -->
+    <section id="tab-history" class="tabpanel">
+      <div class="card">
+        <h4>Previous Sessions (Saved Locally)</h4>
+        <p class="hint">These are stored in your browser only (localStorage). Click “View” to reload.</p>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>File</th>
+              <th>Uploaded</th>
+              <th>Rows</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="historyTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
 
-  <script>
-    const uploadBtn = document.getElementById('uploadBtn');
-    const reportBtn = document.getElementById('reportBtn');
-    const downloadTxtBtn = document.getElementById('downloadTxtBtn');
-    const fileInput = document.getElementById('fileInput');
-    const statusDiv = document.getElementById('status');
-    const previewArea = document.getElementById('previewArea');
-    const metricsArea = document.getElementById('metricsArea');
-    const sprintSummary = document.getElementById('sprintSummary');
-    const execSummary = document.getElementById('execSummary');
-    const standupDraft = document.getElementById('standupDraft');
+  <footer class="foot">
+    <small>Day 7 polish: cards, filename + timestamp, history, clear all, markdown export, and charts — Safe Mode.</small>
+  </footer>
 
-    // Use port 3001 to match your server
-    const API_BASE = 'http://127.0.0.1:3001';
-
-    let lastMetrics = null;
-
-    // Chart instances (so we can destroy before re-drawing)
-    let velocityChart, workloadChart, statusChart;
-
-    uploadBtn.addEventListener('click', async () => {
-      const file = fileInput.files[0];
-      if (!file) {
-        statusDiv.textContent = 'Please choose a CSV file first.';
-        return;
-      }
-
-      uploadBtn.disabled = true;
-      reportBtn.disabled = true;
-      downloadTxtBtn.disabled = true;
-      statusDiv.textContent = 'Uploading...';
-
-      try {
-        const form = new FormData();
-        form.append('file', file);
-
-        const res = await fetch(`${API_BASE}/upload-csv`, {
-          method: 'POST',
-          body: form
-        });
-
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json();
-
-        // ---- Preview (from parsed sample rows) ----
-        if (Array.isArray(json.sample) && json.sample.length) {
-          const lines = json.sample.map(row => Object.values(row).join(', '));
-          previewArea.textContent = lines.join('\n');
-        } else if (Array.isArray(json.preview)) {
-          const cleaned = json.preview.map(l => String(l).replace(/\r/g, ''));
-          previewArea.textContent = cleaned.join('\n');
-        } else {
-          previewArea.textContent = '(no preview)';
-        }
-
-        // ---- Metrics ----
-        if (json.metrics) {
-          lastMetrics = json.metrics;
-          metricsArea.textContent = JSON.stringify(json.metrics, null, 2);
-          reportBtn.disabled = false;
-          statusDiv.textContent = `✅ ${json.message || 'Upload complete'} — ${json.originalName || ''}`;
-          renderCharts(lastMetrics);
-        } else {
-          lastMetrics = null;
-          metricsArea.textContent = '(no metrics returned)';
-          statusDiv.textContent = '⚠️ Uploaded, but no metrics were returned.';
-          clearCharts();
-        }
-      } catch (err) {
-        console.error(err);
-        statusDiv.textContent = '❌ Upload failed. See console for details.';
-        clearCharts();
-      } finally {
-        uploadBtn.disabled = false;
-      }
-    });
-
-    reportBtn.addEventListener('click', async () => {
-      if (!lastMetrics) {
-        statusDiv.textContent = 'Upload a CSV first to compute metrics.';
-        return;
-      }
-
-      reportBtn.disabled = true;
-      statusDiv.textContent = 'Generating reports...';
-
-      try {
-        const res = await fetch(`${API_BASE}/generate-report`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ metrics: lastMetrics })
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json();
-
-        sprintSummary.textContent = json.sprint_summary || '(no summary)';
-        execSummary.textContent = json.executive_summary || '(no executive summary)';
-        standupDraft.textContent = json.standup_draft || '(no standup draft)';
-
-        statusDiv.textContent = '✅ Reports generated';
-        downloadTxtBtn.disabled = false;
-      } catch (err) {
-        console.error(err);
-        statusDiv.textContent = '❌ Report generation failed. See console for details.';
-      } finally {
-        reportBtn.disabled = false;
-      }
-    });
-
-    // Download text report (client-only)
-    downloadTxtBtn.addEventListener('click', () => {
-      const sections = [
-        '# Agile Copilot — Sprint Report',
-        '',
-        '## Sprint Summary',
-        sprintSummary.textContent || '(no summary)',
-        '',
-        '## Executive Summary',
-        execSummary.textContent || '(no executive summary)',
-        '',
-        '## Standup Draft',
-        standupDraft.textContent || '(no standup draft)',
-        ''
-      ];
-      const content = sections.join('\n');
-      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'sprint-report.txt';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    });
-
-    // -------- Charts --------
-    function clearCharts() {
-      if (velocityChart) { velocityChart.destroy(); velocityChart = null; }
-      if (workloadChart) { workloadChart.destroy(); workloadChart = null; }
-      if (statusChart) { statusChart.destroy(); statusChart = null; }
-    }
-
-    function renderCharts(m) {
-      clearCharts();
-
-      // Velocity (Completed vs Remaining SP)
-      const totalSP = Number(m.totalPoints || 0);
-      const completedSP = Number(m.completedPoints || 0);
-      const remainingSP = Math.max(totalSP - completedSP, 0);
-
-      const vCtx = document.getElementById('velocityChart').getContext('2d');
-      velocityChart = new Chart(vCtx, {
-        type: 'doughnut',
-        data: {
-          labels: ['Completed SP', 'Remaining SP'],
-          datasets: [{ data: [completedSP, remainingSP] }]
-        },
-        options: { plugins: { legend: { position: 'bottom' } } }
-      });
-
-      // Workload by Assignee (total issues)
-      const names = Object.keys(m.workload || {});
-      const totals = names.map(n => (m.workload[n]?.total) || 0);
-      const wCtx = document.getElementById('workloadChart').getContext('2d');
-      workloadChart = new Chart(wCtx, {
-        type: 'bar',
-        data: {
-          labels: names,
-          datasets: [{ label: 'Total issues', data: totals }]
-        },
-        options: {
-          plugins: { legend: { display: false } },
-          scales: {
-            x: { ticks: { autoSkip: false, maxRotation: 45 } },
-            y: { beginAtZero: true, precision: 0 }
-          }
-        }
-      });
-
-      // Status distribution
-      const done = Number(m.completed || 0);
-      const inProgress = Number(m.inProgress || 0);
-      const blocked = Number(m.blocked || 0);
-      const sCtx = document.getElementById('statusChart').getContext('2d');
-      statusChart = new Chart(sCtx, {
-        type: 'bar',
-        data: {
-          labels: ['Done', 'In Progress', 'Blocked'],
-          datasets: [{ label: 'Issues', data: [done, inProgress, blocked] }]
-        },
-        options: {
-          plugins: { legend: { display: false } },
-          scales: { y: { beginAtZero: true, precision: 0 } }
-        }
-      });
-    }
-  </script>
+  <!-- App logic -->
+  <script src="app.js"></script>
 </body>
 </html>
