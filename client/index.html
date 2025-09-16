@@ -5,30 +5,38 @@
   <title>Agile Copilot — CSV Uploader</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: system-ui, Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 16px; }
+    :root { --card: #f9fafb; --border: #e5e7eb; }
+    body { font-family: system-ui, Arial, sans-serif; max-width: 1100px; margin: 40px auto; padding: 0 16px; }
     h1 { margin-bottom: 8px; }
-    .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin-top: 16px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-top: 16px; }
     .row { margin: 6px 0; }
-    pre { background: #f7f7f7; padding: 12px; border-radius: 8px; overflow:auto; }
-    button { padding: 10px 16px; border-radius: 8px; border: 1px solid #ccc; cursor: pointer; }
+    pre { background: #fff; padding: 12px; border: 1px solid var(--border); border-radius: 8px; overflow:auto; white-space: pre-wrap; }
+    button { padding: 10px 16px; border-radius: 8px; border: 1px solid #ccc; cursor: pointer; background: #fff; }
     button:disabled { opacity: 0.6; cursor: not-allowed; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+    @media (max-width: 1050px) { .grid3 { grid-template-columns: 1fr; } }
+    @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
+    .muted { color: #6b7280; }
   </style>
+  <!-- Chart.js via CDN (no local install needed) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <h1>Agile Copilot — Upload Sprint CSV</h1>
-  <p>Pick your <code>sample_sprint.csv</code> and click Upload to see a preview and metrics.</p>
+  <p>Upload <code>sample_sprint.csv</code> → see metrics → generate AI reports → download.</p>
 
   <div class="card">
     <div class="row">
       <input type="file" id="fileInput" accept=".csv" />
       <button id="uploadBtn">Upload</button>
+      <button id="reportBtn" disabled>Generate Reports</button>
+      <button id="downloadTxtBtn" disabled>Download Report (.txt)</button>
     </div>
-    <div class="row" id="status"></div>
+    <div class="row muted" id="status"></div>
   </div>
 
-  <div class="grid">
+  <div class="grid2">
     <div class="card">
       <h3>Preview (first rows)</h3>
       <pre id="previewArea">(no data yet)</pre>
@@ -40,15 +48,53 @@
     </div>
   </div>
 
+  <div class="card">
+    <h3>Charts</h3>
+    <div class="grid3">
+      <div>
+        <h4>Velocity (Story Points)</h4>
+        <canvas id="velocityChart" height="200"></canvas>
+      </div>
+      <div>
+        <h4>Workload by Assignee (Issues)</h4>
+        <canvas id="workloadChart" height="200"></canvas>
+      </div>
+      <div>
+        <h4>Status Distribution</h4>
+        <canvas id="statusChart" height="200"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>AI Reports</h3>
+    <h4>Sprint Summary</h4>
+    <pre id="sprintSummary">(no report yet)</pre>
+    <h4>Executive Summary</h4>
+    <pre id="execSummary">(no report yet)</pre>
+    <h4>Standup Draft</h4>
+    <pre id="standupDraft">(no report yet)</pre>
+  </div>
+
   <script>
     const uploadBtn = document.getElementById('uploadBtn');
+    const reportBtn = document.getElementById('reportBtn');
+    const downloadTxtBtn = document.getElementById('downloadTxtBtn');
     const fileInput = document.getElementById('fileInput');
     const statusDiv = document.getElementById('status');
     const previewArea = document.getElementById('previewArea');
     const metricsArea = document.getElementById('metricsArea');
+    const sprintSummary = document.getElementById('sprintSummary');
+    const execSummary = document.getElementById('execSummary');
+    const standupDraft = document.getElementById('standupDraft');
 
-    // Using port 3001 to match the server change
+    // Use port 3001 to match your server
     const API_BASE = 'http://127.0.0.1:3001';
+
+    let lastMetrics = null;
+
+    // Chart instances (so we can destroy before re-drawing)
+    let velocityChart, workloadChart, statusChart;
 
     uploadBtn.addEventListener('click', async () => {
       const file = fileInput.files[0];
@@ -58,6 +104,8 @@
       }
 
       uploadBtn.disabled = true;
+      reportBtn.disabled = true;
+      downloadTxtBtn.disabled = true;
       statusDiv.textContent = 'Uploading...';
 
       try {
@@ -84,18 +132,147 @@
         }
 
         // ---- Metrics ----
-        metricsArea.textContent = json.metrics
-          ? JSON.stringify(json.metrics, null, 2)
-          : '(no metrics returned)';
-
-        statusDiv.textContent = `✅ ${json.message || 'Upload complete'} — ${json.originalName || ''}`;
+        if (json.metrics) {
+          lastMetrics = json.metrics;
+          metricsArea.textContent = JSON.stringify(json.metrics, null, 2);
+          reportBtn.disabled = false;
+          statusDiv.textContent = `✅ ${json.message || 'Upload complete'} — ${json.originalName || ''}`;
+          renderCharts(lastMetrics);
+        } else {
+          lastMetrics = null;
+          metricsArea.textContent = '(no metrics returned)';
+          statusDiv.textContent = '⚠️ Uploaded, but no metrics were returned.';
+          clearCharts();
+        }
       } catch (err) {
         console.error(err);
         statusDiv.textContent = '❌ Upload failed. See console for details.';
+        clearCharts();
       } finally {
         uploadBtn.disabled = false;
       }
     });
+
+    reportBtn.addEventListener('click', async () => {
+      if (!lastMetrics) {
+        statusDiv.textContent = 'Upload a CSV first to compute metrics.';
+        return;
+      }
+
+      reportBtn.disabled = true;
+      statusDiv.textContent = 'Generating reports...';
+
+      try {
+        const res = await fetch(`${API_BASE}/generate-report`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ metrics: lastMetrics })
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+
+        sprintSummary.textContent = json.sprint_summary || '(no summary)';
+        execSummary.textContent = json.executive_summary || '(no executive summary)';
+        standupDraft.textContent = json.standup_draft || '(no standup draft)';
+
+        statusDiv.textContent = '✅ Reports generated';
+        downloadTxtBtn.disabled = false;
+      } catch (err) {
+        console.error(err);
+        statusDiv.textContent = '❌ Report generation failed. See console for details.';
+      } finally {
+        reportBtn.disabled = false;
+      }
+    });
+
+    // Download text report (client-only)
+    downloadTxtBtn.addEventListener('click', () => {
+      const sections = [
+        '# Agile Copilot — Sprint Report',
+        '',
+        '## Sprint Summary',
+        sprintSummary.textContent || '(no summary)',
+        '',
+        '## Executive Summary',
+        execSummary.textContent || '(no executive summary)',
+        '',
+        '## Standup Draft',
+        standupDraft.textContent || '(no standup draft)',
+        ''
+      ];
+      const content = sections.join('\n');
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'sprint-report.txt';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    // -------- Charts --------
+    function clearCharts() {
+      if (velocityChart) { velocityChart.destroy(); velocityChart = null; }
+      if (workloadChart) { workloadChart.destroy(); workloadChart = null; }
+      if (statusChart) { statusChart.destroy(); statusChart = null; }
+    }
+
+    function renderCharts(m) {
+      clearCharts();
+
+      // Velocity (Completed vs Remaining SP)
+      const totalSP = Number(m.totalPoints || 0);
+      const completedSP = Number(m.completedPoints || 0);
+      const remainingSP = Math.max(totalSP - completedSP, 0);
+
+      const vCtx = document.getElementById('velocityChart').getContext('2d');
+      velocityChart = new Chart(vCtx, {
+        type: 'doughnut',
+        data: {
+          labels: ['Completed SP', 'Remaining SP'],
+          datasets: [{ data: [completedSP, remainingSP] }]
+        },
+        options: { plugins: { legend: { position: 'bottom' } } }
+      });
+
+      // Workload by Assignee (total issues)
+      const names = Object.keys(m.workload || {});
+      const totals = names.map(n => (m.workload[n]?.total) || 0);
+      const wCtx = document.getElementById('workloadChart').getContext('2d');
+      workloadChart = new Chart(wCtx, {
+        type: 'bar',
+        data: {
+          labels: names,
+          datasets: [{ label: 'Total issues', data: totals }]
+        },
+        options: {
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { autoSkip: false, maxRotation: 45 } },
+            y: { beginAtZero: true, precision: 0 }
+          }
+        }
+      });
+
+      // Status distribution
+      const done = Number(m.completed || 0);
+      const inProgress = Number(m.inProgress || 0);
+      const blocked = Number(m.blocked || 0);
+      const sCtx = document.getElementById('statusChart').getContext('2d');
+      statusChart = new Chart(sCtx, {
+        type: 'bar',
+        data: {
+          labels: ['Done', 'In Progress', 'Blocked'],
+          datasets: [{ label: 'Issues', data: [done, inProgress, blocked] }]
+        },
+        options: {
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true, precision: 0 } }
+        }
+      });
+    }
   </script>
 </body>
 </html>
