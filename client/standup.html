@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Agile Copilot — Day 8 (Standup Synthesizer)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Daily Standup Synthesizer</h1>
+    <div class="actions">
+      <a class="btn secondary" href="index.html" title="Back to Day 7 UI">← Back</a>
+      <button id="btnClear" class="btn secondary">Clear</button>
+      <button id="btnExportMd" class="btn">Export Markdown</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Input -->
+    <section class="card">
+      <h3>Paste Standup Notes</h3>
+      <p class="hint">One block of text is fine. Works with patterns like:<br/>
+        <code>Alice: y - fixed login; t - add tests; b - waiting for API key</code><br/>
+        <code>Bob yesterday: code review; today: merge PR; blockers: flaky test</code></p>
+      <div class="row">
+        <textarea id="notes" rows="10" style="width:100%;" placeholder="Paste your team notes here..."></textarea>
+      </div>
+      <div class="row" style="margin-top:10px; gap:12px;">
+        <label for="standupDate"><strong>Date:</strong></label>
+        <input id="standupDate" type="date" />
+        <button id="btnAnalyze" class="btn">Analyze Notes</button>
+      </div>
+    </section>
+
+    <!-- Results -->
+    <section class="grid">
+      <div class="card">
+        <h4>Team Snapshot (Yesterday / Today / Blockers)</h4>
+        <div id="snapshot"></div>
+      </div>
+
+      <div class="card">
+        <h4>Blockers (Severity 0–3)</h4>
+        <div id="blockers"></div>
+      </div>
+
+      <div class="card">
+        <h4>PM Follow-ups (Auto-suggested)</h4>
+        <ol id="followups"></ol>
+      </div>
+
+      <div class="card">
+        <h4>History (Local Only)</h4>
+        <p class="hint">Stored in your browser (localStorage). Click “View” to reload.</p>
+        <table class="table">
+          <thead>
+            <tr><th>#</th><th>Date</th><th>People</th><th>Actions</th></tr>
+          </thead>
+          <tbody id="historyBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <small>Day 8: parse free-form notes → D/T/B, severity, follow-ups, history & markdown export — Safe Mode.</small>
+  </footer>
+
+  <script src="standup.js"></script>
+</body>
+</html>
