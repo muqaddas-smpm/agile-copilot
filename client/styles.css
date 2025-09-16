@@ -83,3 +83,27 @@ textarea {
   border: 1px solid var(--border); border-radius: 10px;
   padding: 10px; resize: vertical;
 }
+
+/* Day 8 additions */
+.badge{
+  display:inline-block; min-width:1.5rem; text-align:center; font-weight:700;
+  border-radius:999px; padding:2px 8px; margin-right:6px; border:1px solid var(--border);
+}
+.badge.s0{ background:#1a1f3a; }
+.badge.s1{ background:#1f355a; }
+.badge.s2{ background:#5a441f; }
+.badge.s3{ background:#5a1f1f; }
+
+.toast{
+  position:fixed; bottom:24px; right:24px; padding:10px 14px; border-radius:10px;
+  background:#163a24; border:1px solid var(--border); box-shadow:0 6px 20px rgba(0,0,0,.25);
+  color:var(--text); opacity:0; transform:translateY(10px); transition:all .25s ease;
+  z-index:9999;
+}
+.toast.show{ opacity:1; transform:translateY(0); }
+
+.dropzone{
+  margin-top:10px; padding:18px; border:1px dashed var(--border); border-radius:10px;
+  text-align:center; opacity:.9;
+}
+.dropzone.drag{ background:rgba(255,255,255,.03); }

@@ -7,6 +7,11 @@ function download(filename, text){
   const url=URL.createObjectURL(blob); const a=document.createElement("a");
   a.href=url; a.download=filename; a.click(); URL.revokeObjectURL(url);
 }
+function showToast(msg="✅ Analyzed"){
+  const t=$("#toast"); t.textContent=msg; t.hidden=false;
+  t.classList.add("show");
+  setTimeout(()=>{ t.classList.remove("show"); t.hidden=true; }, 1600);
+}
 
 // ===== History (localStorage) =====
 const LS_KEY="agc_standup_history";
@@ -15,10 +20,6 @@ function saveHistory(list){ localStorage.setItem(LS_KEY, JSON.stringify(list)); 
 let history = loadHistory();
 
 // ===== Parsing =====
-// Supports:
-//   "Alice: y - did X; t - do Y; b - waiting on Z"
-//   "Bob yesterday: ..., today: ..., blockers: ..."
-//   Free lines under a name block.
 const PERSON_RE = /^([A-Z][A-Za-z0-9_. -]{0,40})\s*[:\-—]\s*(.*)$/i;
 const TOKENS = {
   y: /(^|\b)(yesterday|y)\s*[:\-–]\s*/i,
@@ -40,11 +41,11 @@ function parseNotes(text){
     const line = raw.trim();
     if(!line) continue;
 
+    // person header like "Alice: ..."
     const m = PERSON_RE.exec(line);
     if(m){
       current = m[1].trim();
       const rest = m[2] || "";
-      // Try inline tokens on the same line
       const parts = splitTokens(rest);
       if(parts.y) push(current, "y", parts.y);
       if(parts.t) push(current, "t", parts.t);
@@ -52,17 +53,17 @@ function parseNotes(text){
       continue;
     }
 
-    // If within a current person, try to classify the line
+    // list bullets or loose lines under current person
     if(current){
-      const parts = splitTokens(line);
+      const parts = splitTokens(line.replace(/^[•*\-\u2022]+\s*/,""));
       if(parts.y || parts.t || parts.b){
         if(parts.y) push(current, "y", parts.y);
         if(parts.t) push(current, "t", parts.t);
         if(parts.b) push(current, "b", parts.b);
       }else{
-        // No explicit token — heuristics: if contains “block”, treat as blocker; else if starts with verb, put into today; else yesterday.
-        if(/block/i.test(line)) push(current, "b", line);
-        else if(/^\b(add|fix|refactor|write|review|merge|deploy|test|investigate)\b/i.test(line)) push(current,"t",line);
+        // heuristics
+        if(/block|blocked|waiting|dependency|review pending|qa|test\s*failure|flaky/i.test(line)) push(current,"b",line);
+        else if(/^\b(add|fix|refactor|write|review|merge|deploy|test|investigate|document|pair|polish|design|plan)\b/i.test(line)) push(current,"t",line);
         else push(current,"y",line);
       }
     }
@@ -71,11 +72,8 @@ function parseNotes(text){
 }
 
 function splitTokens(str){
-  // Extract simple y/t/b segments from a chunk like "y - did x; t - do y; b - waiting"
   const out = {};
-  let s = " " + str; // pad for regex ^|\b in TOKENS
-
-  // Find positions, then slice
+  let s = " " + str;
   const idx = [];
   for(const key of ["y","t","b"]){
     const re = TOKENS[key];
@@ -84,7 +82,6 @@ function splitTokens(str){
   }
   if(!idx.length){ return {}; }
   idx.sort((a,b)=>a.pos-b.pos);
-
   for(let i=0;i<idx.length;i++){
     const cur = idx[i];
     const start = cur.pos + cur.len;
@@ -98,11 +95,14 @@ function splitTokens(str){
 // ===== Severity scoring (0–3) =====
 function scoreSeverity(text){
   const t = String(text||"").toLowerCase();
-  if(!t || /no blocker|none/.test(t)) return 0;
+  if(!t || /(^|\b)(no blocker|none|n\/a)(\b|$)/.test(t)) return 0;
   let score = 1;
-  if(/blocked|waiting|dependency|review|qa|test failure|stuck/.test(t)) score = Math.max(score,2);
-  if(/prod|outage|p0|sev|deadline|cannot proceed|broken|urgent|security/.test(t)) score = Math.max(score,3);
+  if(/blocked|waiting|dependency|review|qa\b|test failure|flaky|stuck|slow env|access|permission/.test(t)) score = Math.max(score,2);
+  if(/prod|outage|p0|sev(\s*0|1|2|3)?|deadline|cannot proceed|broken|urgent|security|data loss|customer impact/.test(t)) score = Math.max(score,3);
   return score;
+}
+function severityBadge(sev){
+  return `<span class="badge s${sev}">${sev}</span>`;
 }
 
 // ===== Render =====
@@ -117,11 +117,15 @@ function renderSnapshot(people){
     const p = people[name];
     const div = document.createElement("div");
     div.className = "card";
+    const bl = (p.b||[]).map(x=>{
+      const sev = scoreSeverity(x);
+      return `<li>${severityBadge(sev)} ${escapeHtml(x)}</li>`;
+    }).join("") || "<li>—</li>";
     div.innerHTML = `
-      <h4>${name}</h4>
-      <div><strong>Yesterday</strong><ul>${(p.y||[]).map(x=>`<li>${x}</li>`).join("")||"<li>—</li>"}</ul></div>
-      <div><strong>Today</strong><ul>${(p.t||[]).map(x=>`<li>${x}</li>`).join("")||"<li>—</li>"}</ul></div>
-      <div><strong>Blockers</strong><ul>${(p.b||[]).map(x=>`<li>${x}</li>`).join("")||"<li>—</li>"}</ul></div>
+      <h4>${nameSafe(name)}</h4>
+      <div><strong>Yesterday</strong><ul>${(p.y||[]).map(x=>`<li>${escapeHtml(x)}</li>`).join("")||"<li>—</li>"}</ul></div>
+      <div><strong>Today</strong><ul>${(p.t||[]).map(x=>`<li>${escapeHtml(x)}</li>`).join("")||"<li>—</li>"}</ul></div>
+      <div><strong>Blockers</strong><ul>${bl}</ul></div>
     `;
     frag.appendChild(div);
   }
@@ -140,7 +144,7 @@ function renderBlockers(people){
   const list = document.createElement("ul");
   for(const it of items){
     const li = document.createElement("li");
-    li.innerHTML = `<strong>[${it.sev}]</strong> <em>${nameSafe(it.name)}</em>: ${escapeHtml(it.text)}`;
+    li.innerHTML = `${severityBadge(it.sev)} <em>${nameSafe(it.name)}</em>: ${escapeHtml(it.text)}`;
     list.appendChild(li);
   }
   root.appendChild(list);
@@ -160,7 +164,6 @@ function renderFollowups(people){
       out.push(`${ask} ${who} on: ${b}`);
     }
   }
-  if(!out.length){ root.innerHTML = ""; return; }
   out.slice(0,10).forEach(x => {
     const li = document.createElement("li"); li.textContent = x; root.appendChild(li);
   });
@@ -180,7 +183,7 @@ function toMarkdown(dateISO, people){
     md += `## ${n}\n`;
     md += `**Yesterday**\n${itemsToMd(p.y)}\n`;
     md += `**Today**\n${itemsToMd(p.t)}\n`;
-    md += `**Blockers**\n${itemsToMd(p.b)}\n\n`;
+    md += `**Blockers**\n${itemsToMd(p.b, true)}\n\n`;
   }
   // blockers summary
   const bl = [];
@@ -190,15 +193,81 @@ function toMarkdown(dateISO, people){
   if(bl.length){
     md += `## Blockers (by severity)\n`;
     bl.sort((a,b)=>b.sev-a.sev).forEach(x => {
-      md += `- [${x.sev}] ${x.name}: ${x.b}\n`;
+      md += `- [S${x.sev}] ${x.name}: ${x.b}\n`;
     });
     md += `\n`;
   }
   return md;
 }
-function itemsToMd(arr){ 
+function itemsToMd(arr, withSev=false){
   if(!arr || !arr.length) return "- —\n";
-  return arr.map(x => `- ${x}`).join("\n") + "\n";
+  return arr.map(x => {
+    if(withSev){ return `- [S${scoreSeverity(x)}] ${x}`; }
+    return `- ${x}`;
+  }).join("\n") + "\n";
+}
+
+// ===== CSV import (Slack-like) =====
+function parseCsv(text){
+  const lines = text.replace(/\r/g,"").split("\n").filter(Boolean);
+  if(!lines.length) return { header: [], rows: [] };
+  const header = splitCsvLine(lines[0]).map(h=>h.trim().toLowerCase());
+  const rows = lines.slice(1).map(line => {
+    const cells = splitCsvLine(line);
+    const obj = {};
+    header.forEach((h,i)=> obj[h] = (cells[i] ?? "").trim());
+    return obj;
+  });
+  return { header, rows };
+}
+function splitCsvLine(line){
+  // basic CSV with quotes support
+  const out = [];
+  let cur = "", inQ = false;
+  for(let i=0;i<line.length;i++){
+    const ch = line[i];
+    if(ch === '"' ){
+      if(inQ && line[i+1] === '"'){ cur += '"'; i++; } else { inQ = !inQ; }
+    }else if(ch === ',' && !inQ){
+      out.push(cur); cur = "";
+    }else{
+      cur += ch;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
+function importSlackCsvToNotes(csvText){
+  const { header, rows } = parseCsv(csvText);
+  if(!header.length || !rows.length) return "";
+
+  // map common header names
+  const h = (name) => header.indexOf(name);
+  const idxUser = [h("user"), h("username"), h("author")].find(i=>i>=0);
+  const idxText = [h("text"), h("message"), h("body")].find(i=>i>=0);
+  const idxTime = [h("date"), h("timestamp"), h("ts"), h("time")].find(i=>i>=0);
+
+  const bucket = {}; // name -> array of inferred items as text lines
+  for(const r of rows){
+    const user = (idxUser!=null ? r[header[idxUser]] : "Unknown") || "Unknown";
+    const msg  = (idxText!=null ? r[header[idxText]] : "") || "";
+    const ts   = (idxTime!=null ? r[header[idxTime]] : "");
+    if(!bucket[user]) bucket[user] = [];
+    // classify message to y/t/b
+    let tag = "t";
+    if(/block|blocked|waiting|dependency|access|permission|review pending|flaky|qa|failure/i.test(msg)) tag = "b";
+    else if(/yesterday/i.test(msg)) tag = "y";
+    const timeHint = ts ? ` (${ts})` : "";
+    bucket[user].push(`${tag} - ${msg}${timeHint}`);
+  }
+
+  // synthesize note text that our parser understands
+  const lines = [];
+  Object.keys(bucket).forEach(name=>{
+    lines.push(`${name}: ${bucket[name].join("; ")}`);
+  });
+  return lines.join("\n");
 }
 
 // ===== History UI =====
@@ -243,7 +312,6 @@ function display(people){
 
 // ===== Wire up =====
 (function init(){
-  // default date = today
   $("#standupDate").value = fmtDateISO(new Date());
 
   $("#btnAnalyze").addEventListener("click", ()=>{
@@ -251,10 +319,10 @@ function display(people){
     const date = $("#standupDate").value || fmtDateISO(new Date());
     const people = parseNotes(raw);
     display(people);
-    // save to history
     const entry = { id: String(Date.now()), date, raw, people };
     history.unshift(entry); history = history.slice(0,50);
     saveHistory(history); renderHistory();
+    showToast("✅ Analyzed");
   });
 
   $("#btnClear").addEventListener("click", ()=>{
@@ -269,6 +337,31 @@ function display(people){
     const people = parseNotes($("#notes").value);
     const md = toMarkdown(date, people);
     download(`standup-${date}.md`, md);
+  });
+
+  // CSV import
+  const fileEl = $("#csvFile");
+  const drop = $("#dropCsv");
+  $("#btnImportCsv").addEventListener("click", async ()=>{
+    if(!fileEl.files || !fileEl.files[0]){ alert("Choose a .csv file first."); return; }
+    const text = await fileEl.files[0].text();
+    const synth = importSlackCsvToNotes(text);
+    if(synth){ $("#notes").value = synth; showToast("📥 CSV imported → ready to Analyze"); }
+    else alert("Could not parse CSV.");
+  });
+  ;["dragenter","dragover"].forEach(ev=>{
+    drop.addEventListener(ev, e=>{ e.preventDefault(); drop.classList.add("drag"); });
+  });
+  ;["dragleave","drop"].forEach(ev=>{
+    drop.addEventListener(ev, e=>{ e.preventDefault(); drop.classList.remove("drag"); });
+  });
+  drop.addEventListener("drop", async (e)=>{
+    const f = e.dataTransfer.files[0];
+    if(!f || !/\.csv$/i.test(f.name)) return;
+    const text = await f.text();
+    const synth = importSlackCsvToNotes(text);
+    if(synth){ $("#notes").value = synth; showToast("📥 CSV imported → ready to Analyze"); }
+    else alert("Could not parse CSV.");
   });
 
   renderHistory();

@@ -10,7 +10,7 @@
   <header class="topbar">
     <h1>Daily Standup Synthesizer</h1>
     <div class="actions">
-      <a class="btn secondary" href="index.html" title="Back to Day 7 UI">← Back</a>
+      <a class="btn secondary" href="index.html" title="Back to main">← Back</a>
       <button id="btnClear" class="btn secondary">Clear</button>
       <button id="btnExportMd" class="btn">Export Markdown</button>
     </div>
@@ -20,17 +20,40 @@
     <!-- Input -->
     <section class="card">
       <h3>Paste Standup Notes</h3>
-      <p class="hint">One block of text is fine. Works with patterns like:<br/>
+      <p class="hint">One block of text is fine. Patterns like:<br/>
         <code>Alice: y - fixed login; t - add tests; b - waiting for API key</code><br/>
         <code>Bob yesterday: code review; today: merge PR; blockers: flaky test</code></p>
+
       <div class="row">
         <textarea id="notes" rows="10" style="width:100%;" placeholder="Paste your team notes here..."></textarea>
       </div>
-      <div class="row" style="margin-top:10px; gap:12px;">
+
+      <div class="row" style="margin-top:10px; gap:12px; align-items:center;">
         <label for="standupDate"><strong>Date:</strong></label>
         <input id="standupDate" type="date" />
         <button id="btnAnalyze" class="btn">Analyze Notes</button>
       </div>
+
+      <hr class="divider"/>
+
+      <h4>Optional: Import Slack CSV</h4>
+      <p class="hint">Understands headers like <em>user,text,date</em> or <em>user,message,timestamp/ts</em> (UNIX seconds or ms). We’ll synthesize D/T/B automatically.</p>
+      <div class="row" style="gap:12px; align-items:center;">
+        <input type="file" id="csvFile" accept=".csv" />
+        <button id="btnImportCsv" class="btn secondary">Import CSV</button>
+      </div>
+      <div id="dropCsv" class="dropzone" title="Drop a .csv file here">Drop a .csv file here</div>
+    </section>
+
+    <!-- Legend -->
+    <section class="card">
+      <h4>Severity Legend</h4>
+      <p>
+        <span class="badge s0">0</span> none &nbsp;
+        <span class="badge s1">1</span> minor &nbsp;
+        <span class="badge s2">2</span> blocker &nbsp;
+        <span class="badge s3">3</span> critical
+      </p>
     </section>
 
     <!-- Results -->
@@ -62,6 +85,8 @@
       </div>
     </section>
   </main>
+
+  <div id="toast" class="toast" hidden>✅ Analyzed</div>
 
   <footer class="foot">
     <small>Day 8: parse free-form notes → D/T/B, severity, follow-ups, history & markdown export — Safe Mode.</small>
