@@ -1,8 +1,8 @@
 // Agile Copilot — Day 8 (Standup Synthesizer)
 // Full replacement for client/standup.js
-// Features: parsing D/T/B, severity scoring + badges, PM follow-ups,
-// history (localStorage), Markdown export, CSV import (Slack-like),
-// Copy Markdown, Export CSV, toast notifications, keyboard shortcuts.
+// New: editable severity badges (cycles 0→1→2→3→0, stored locally),
+// Export JSON, Print View. Still includes CSV import, Copy/Export MD,
+// Export CSV, toast, shortcuts, history, smarter parsing.
 
 "use strict";
 
@@ -23,6 +23,7 @@ function showToast(msg="✅ Analyzed"){
 }
 function nameSafe(s){ return String(s||"").replace(/[<>&]/g, "_"); }
 function escapeHtml(s){ return String(s||"").replace(/[&<>]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[ch])); }
+function makeKey(name, text){ return (name||"").trim()+"||"+String(text||"").trim().toLowerCase(); }
 
 // ===== History (localStorage) =====
 const LS_KEY="agc_standup_history";
@@ -30,8 +31,22 @@ function loadHistory(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)||"[]
 function saveHistory(list){ localStorage.setItem(LS_KEY, JSON.stringify(list)); }
 let history = loadHistory();
 
+// ===== Severity overrides (localStorage) =====
+const LS_OVR="agc_standup_sev_overrides";
+function loadOverrides(){ try{ return JSON.parse(localStorage.getItem(LS_OVR)||"{}"); }catch{ return {}; } }
+function saveOverrides(map){ localStorage.setItem(LS_OVR, JSON.stringify(map)); }
+let overrides = loadOverrides();
+function getSeverity(name, text){
+  const key = makeKey(name, text);
+  return Object.prototype.hasOwnProperty.call(overrides,key) ? overrides[key] : scoreSeverity(text);
+}
+function setSeverity(name, text, sev){
+  const key = makeKey(name, text);
+  overrides[key] = sev;
+  saveOverrides(overrides);
+}
+
 // ===== Parsing =====
-// Supports inline tokens (y/t/b) and free-form heuristics.
 const PERSON_RE = /^([A-Z][A-Za-z0-9_. -]{0,40})\s*[:\-—]\s*(.*)$/i;
 const TOKENS = {
   y: /(^|\b)(yesterday|y)\s*[:\-–]\s*/i,
@@ -74,7 +89,6 @@ function parseNotes(text){
     const line = raw.trim();
     if(!line) continue;
 
-    // person header like "Alice: ..."
     const m = PERSON_RE.exec(line);
     if(m){
       current = m[1].trim();
@@ -86,7 +100,6 @@ function parseNotes(text){
       continue;
     }
 
-    // list bullets or loose lines under current person
     if(current){
       const cleaned = line.replace(/^[•*\-\u2022]+\s*/,"");
       const parts = splitTokens(cleaned);
@@ -95,7 +108,6 @@ function parseNotes(text){
         if(parts.t) push(current, "t", parts.t);
         if(parts.b) push(current, "b", parts.b);
       }else{
-        // heuristics
         if(/block|blocked|waiting|dependency|access|permission|review pending|qa\b|test\s*failure|flaky|stuck/i.test(line)) push(current,"b",line);
         else if(/^\b(add|fix|refactor|write|review|merge|deploy|test|investigate|document|pair|polish|design|plan)\b/i.test(line)) push(current,"t",line);
         else push(current,"y",line);
@@ -114,7 +126,10 @@ function scoreSeverity(text){
   if(/prod|outage|p0|sev(\s*0|1|2|3)?|deadline|cannot proceed|broken|urgent|security|data loss|customer impact/.test(t)) score = Math.max(score,3);
   return score;
 }
-function severityBadge(sev){ return `<span class="badge s${sev}">${sev}</span>`; }
+function severityBadge(sev, name, text){
+  const key = makeKey(name, text);
+  return `<span class="badge s${sev} editable" data-key="${encodeURIComponent(key)}" title="Click to set severity (0–3)">${sev}</span>`;
+}
 
 // ===== Renderers =====
 function renderSnapshot(people){
@@ -129,9 +144,9 @@ function renderSnapshot(people){
     const p = people[name];
     const div = document.createElement("div");
     div.className = "card";
-    const bl = (p.b||[]).map(x=>{
-      const sev = scoreSeverity(x);
-      return `<li>${severityBadge(sev)} ${escapeHtml(x)}</li>`;
+    const bl = (p.b||[]).map(b=>{
+      const sev = getSeverity(name, b);
+      return `<li>${severityBadge(sev, name, b)} ${escapeHtml(b)}</li>`;
     }).join("") || "<li>—</li>";
     div.innerHTML = `
       <h4>${nameSafe(name)}</h4>
@@ -149,7 +164,7 @@ function renderBlockers(people){
   root.innerHTML = "";
   const items = [];
   for(const [name,p] of Object.entries(people)){
-    (p.b||[]).forEach(b => items.push({ name, text:b, sev: scoreSeverity(b) }));
+    (p.b||[]).forEach(b => items.push({ name, text:b, sev: getSeverity(name,b) }));
   }
   if(!items.length){ root.innerHTML = '<p class="hint">(no blockers)</p>'; return; }
   items.sort((a,b)=>b.sev-a.sev);
@@ -157,7 +172,7 @@ function renderBlockers(people){
   const list = document.createElement("ul");
   for(const it of items){
     const li = document.createElement("li");
-    li.innerHTML = `${severityBadge(it.sev)} <em>${nameSafe(it.name)}</em>: ${escapeHtml(it.text)}`;
+    li.innerHTML = `${severityBadge(it.sev, it.name, it.text)} <em>${nameSafe(it.name)}</em>: ${escapeHtml(it.text)}`;
     list.appendChild(li);
   }
   root.appendChild(list);
@@ -169,7 +184,7 @@ function renderFollowups(people){
   const out = [];
   for(const [name,p] of Object.entries(people)){
     for(const b of (p.b||[])){
-      const sev = scoreSeverity(b);
+      const sev = getSeverity(name, b);
       const who = guessOwnerFromText(b) || name;
       const ask = sev>=3 ? "Escalate" : (sev===2 ? "Unblock" : "Check-in");
       out.push(`${ask} ${who} on: ${b}`);
@@ -194,11 +209,11 @@ function toMarkdown(dateISO, people){
     md += `## ${n}\n`;
     md += `**Yesterday**\n${itemsToMd(p.y)}\n`;
     md += `**Today**\n${itemsToMd(p.t)}\n`;
-    md += `**Blockers**\n${itemsToMd(p.b, true)}\n\n`;
+    md += `**Blockers**\n${itemsToMd(p.b, true, n)}\n\n`;
   }
   const bl = [];
   for(const [name,p] of Object.entries(people)){
-    (p.b||[]).forEach(b => bl.push({name, b, sev: scoreSeverity(b)}));
+    (p.b||[]).forEach(b => bl.push({name, b, sev: getSeverity(name,b)}));
   }
   if(bl.length){
     md += `## Blockers (by severity)\n`;
@@ -209,9 +224,9 @@ function toMarkdown(dateISO, people){
   }
   return md;
 }
-function itemsToMd(arr, withSev=false){
+function itemsToMd(arr, withSev=false, nameForSev=null){
   if(!arr || !arr.length) return "- —\n";
-  return arr.map(x => withSev ? `- [S${scoreSeverity(x)}] ${x}` : `- ${x}`).join("\n") + "\n";
+  return arr.map(x => withSev ? `- [S${getSeverity(nameForSev,x)}] ${x}` : `- ${x}`).join("\n") + "\n";
 }
 
 // ===== CSV import (Slack-like) =====
@@ -228,7 +243,6 @@ function parseCsv(text){
   return { header, rows };
 }
 function splitCsvLine(line){
-  // basic CSV with quotes support
   const out = [];
   let cur = "", inQ = false;
   for(let i=0;i<line.length;i++){
@@ -244,7 +258,6 @@ function splitCsvLine(line){
   out.push(cur);
   return out;
 }
-
 function importSlackCsvToNotes(csvText){
   const { header, rows } = parseCsv(csvText);
   if(!header.length || !rows.length) return "";
@@ -260,7 +273,6 @@ function importSlackCsvToNotes(csvText){
     const msg  = (idxText!=null ? r[header[idxText]] : "") || "";
     const ts   = (idxTime!=null ? r[header[idxTime]] : "");
     if(!bucket[user]) bucket[user] = [];
-    // classify message to y/t/b
     let tag = "t";
     if(/block|blocked|waiting|dependency|access|permission|review pending|flaky|qa|failure/i.test(msg)) tag = "b";
     else if(/yesterday/i.test(msg)) tag = "y";
@@ -309,11 +321,76 @@ function renderHistory(){
   });
 }
 
-// ===== Display =====
+// ===== Display & wiring for editable badges =====
+function wireBadgeClicks(currentPeople){
+  document.querySelectorAll(".badge.editable").forEach(badge=>{
+    badge.addEventListener("click", ()=>{
+      const key = decodeURIComponent(badge.dataset.key || "");
+      if(!key) return;
+      const [person, textLower] = key.split("||");
+      // Find original text for exact display key (we stored lowercased in key)
+      let originalText = null;
+      const p = currentPeople[person];
+      if(p && p.b){
+        originalText = p.b.find(x => String(x).trim().toLowerCase() === textLower) ?? null;
+      }
+      const current = getSeverity(person, originalText ?? textLower);
+      const next = (current + 1) % 4;
+      setSeverity(person, originalText ?? textLower, next);
+      // Re-render with updated severities
+      display(currentPeople);
+    });
+  });
+}
+
 function display(people){
   renderSnapshot(people);
   renderBlockers(people);
   renderFollowups(people);
+  wireBadgeClicks(people);
+}
+
+// ===== Print-friendly HTML =====
+function toPrintableHtml(dateISO, people){
+  const names = Object.keys(people).sort((a,b)=>a.localeCompare(b));
+  const rows = names.map(n=>{
+    const p = people[n];
+    const y = (p.y||[]).map(x=>`<li>${escapeHtml(x)}</li>`).join("") || "<li>—</li>";
+    const t = (p.t||[]).map(x=>`<li>${escapeHtml(x)}</li>`).join("") || "<li>—</li>";
+    const b = (p.b||[]).map(x=>`<li>[S${getSeverity(n,x)}] ${escapeHtml(x)}</li>`).join("") || "<li>—</li>";
+    return `
+      <section class="block">
+        <h2>${nameSafe(n)}</h2>
+        <h3>Yesterday</h3><ul>${y}</ul>
+        <h3>Today</h3><ul>${t}</ul>
+        <h3>Blockers</h3><ul>${b}</ul>
+      </section>`;
+  }).join("\n");
+
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>Standup — ${prettyDate(dateISO)}</title>
+<style>
+  body{ font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial; margin:24px; color:#111; }
+  h1{ margin:0 0 16px; }
+  h2{ margin:16px 0 6px; }
+  h3{ margin:10px 0 4px; font-weight:600; }
+  ul{ margin:0 0 8px 20px; }
+  .block{ page-break-inside:avoid; margin-bottom:14px; padding-bottom:8px; border-bottom:1px solid #ddd; }
+  @media print{
+    a,button{ display:none !important; }
+    body{ margin:12px; }
+  }
+</style>
+</head>
+<body>
+  <h1>Standup — ${prettyDate(dateISO)}</h1>
+  ${rows || "<p>No items.</p>"}
+  <script>window.print()</script>
+</body>
+</html>`;
 }
 
 // ===== Wire up =====
@@ -370,7 +447,6 @@ function display(people){
         await navigator.clipboard.writeText(md);
         showToast("📋 Markdown copied");
       } catch {
-        // Fallback
         const ta = document.createElement("textarea");
         ta.value = md; document.body.appendChild(ta);
         ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
@@ -390,12 +466,50 @@ function display(people){
         const y = (p.y||[]).join(" | ");
         const t = (p.t||[]).join(" | ");
         const b = (p.b||[]).join(" | ");
-        const maxSev = Math.max(0, ...(p.b||[]).map(scoreSeverity));
+        const maxSev = Math.max(0, ...(p.b||[]).map(x=>getSeverity(name,x)));
         rows.push([name,y,t,b,String(Number.isFinite(maxSev)?maxSev:0)]);
       }
       const csv = rows.map(r => r.map(v => /[",\n]/.test(v) ? `"${String(v).replace(/"/g,'""')}"` : String(v)).join(",")).join("\n");
       download(`standup-${date}.csv`, csv);
       showToast("📄 CSV exported");
+    });
+  }
+
+  // Export JSON
+  const exportJsonBtn = $("#btnExportJson");
+  if (exportJsonBtn){
+    exportJsonBtn.addEventListener("click", ()=>{
+      const date = ($("#standupDate")?.value) || fmtDateISO(new Date());
+      const people = parseNotes($("#notes").value);
+      const names = Object.keys(people).sort((a,b)=>a.localeCompare(b));
+      const payload = {
+        date,
+        people: names.map(n=>{
+          const p = people[n];
+          return {
+            name: n,
+            yesterday: p.y || [],
+            today: p.t || [],
+            blockers: (p.b||[]).map(b=>({ text: b, severity: getSeverity(n,b) }))
+          };
+        }),
+        overrides
+      };
+      download(`standup-${date}.json`, JSON.stringify(payload,null,2));
+      showToast("🧾 JSON exported");
+    });
+  }
+
+  // Print View
+  const printBtn = $("#btnPrint");
+  if (printBtn){
+    printBtn.addEventListener("click", ()=>{
+      const date = ($("#standupDate")?.value) || fmtDateISO(new Date());
+      const people = parseNotes($("#notes").value);
+      const html = toPrintableHtml(date, people);
+      const w = window.open("", "_blank");
+      if(!w) return alert("Popup blocked — allow popups to print.");
+      w.document.open(); w.document.write(html); w.document.close();
     });
   }
 
@@ -436,6 +550,7 @@ function display(people){
     if (e.ctrlKey && e.key === "Enter"){ analyzeBtn?.click(); e.preventDefault(); }
     if (e.altKey && (e.key === "e" || e.key === "E")){ exportMdBtn?.click(); e.preventDefault(); }
     if (e.altKey && (e.key === "c" || e.key === "C")){ copyBtn?.click(); e.preventDefault(); }
+    if (e.altKey && (e.key === "p" || e.key === "P")){ printBtn?.click(); e.preventDefault(); }
   });
 
   renderHistory();

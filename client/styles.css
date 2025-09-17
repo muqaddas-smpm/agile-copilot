@@ -107,3 +107,13 @@ textarea {
   text-align:center; opacity:.9;
 }
 .dropzone.drag{ background:rgba(255,255,255,.03); }
+
+/* Day 8 — editable badge + print helpers */
+.badge.editable { cursor: pointer; }
+
+@media print {
+  .topbar, .actions, .foot, .dropzone, .table button { display: none !important; }
+  body { background: #fff; }
+  .card { box-shadow: none; border: none; }
+}
+
