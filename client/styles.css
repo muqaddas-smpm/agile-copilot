@@ -84,6 +84,13 @@ textarea {
   padding: 10px; resize: vertical;
 }
 
+.code{
+  background:#0f1836; color:var(--text);
+  border:1px solid var(--border); border-radius:10px;
+  padding:12px; font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+
 /* Day 8 additions */
 .badge{
   display:inline-block; min-width:1.5rem; text-align:center; font-weight:700;
@@ -116,4 +123,9 @@ textarea {
   body { background: #fff; }
   .card { box-shadow: none; border: none; }
 }
+
+/* Day 9 additions */
+.trend{ display:flex; gap:8px; align-items:flex-end; height:140px; padding:10px; border:1px solid var(--border); border-radius:10px; }
+.trend .bar{ width:20px; background:#1f355a; border:1px solid var(--border); border-radius:6px 6px 0 0; position:relative; }
+.trend .bar .cap{ position:absolute; bottom:100%; transform:translateY(-4px); font-size:.75rem; opacity:.8; }
 

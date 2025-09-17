@@ -435,6 +435,61 @@ function toPrintableHtml(dateISO, people){
       showToast("📄 Markdown exported");
     });
   }
+// ===== AI Summarize (server-backed) =====
+const aiBtn = $("#btnAISummarize");
+if (aiBtn){
+  aiBtn.addEventListener("click", async ()=>{
+    const date = $("#standupDate").value || fmtDateISO(new Date());
+    const notes = $("#notes").value.trim();
+    if (notes.length < 10){ alert("Please paste standup notes first."); return; }
+
+    // If you're opening standup.html as a file://, call localhost explicitly
+    const API_BASE = (location.origin.startsWith("http")) ? "" : "http://localhost:3001";
+
+    aiBtn.disabled = true;
+    aiBtn.textContent = "Summarizing…";
+    try {
+      const resp = await fetch(`${API_BASE}/api/ai/standup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, notes })
+      });
+      if(!resp.ok){
+        const err = await resp.json().catch(()=>({}));
+        throw new Error(err.error || `Request failed (${resp.status})`);
+      }
+      const data = await resp.json();
+      $("#aiMd").textContent = data.md || "(no content)";
+      const u = data.usage || {};
+      const c = data.cost || {};
+      $("#aiUsage").textContent = `usage: in ${u.prompt_tokens||0}, out ${u.completion_tokens||0} (≈$${(c.total_usd||0).toFixed(4)})`;
+      showToast("✨ AI summary ready");
+    } catch (e){
+      alert("AI summarize failed: " + (e?.message || e));
+    } finally {
+      aiBtn.disabled = false;
+      aiBtn.textContent = "AI Summarize";
+    }
+  });
+}
+
+// Copy AI Markdown
+const copyAiBtn = $("#btnCopyAi");
+if (copyAiBtn){
+  copyAiBtn.addEventListener("click", async ()=>{
+    const md = $("#aiMd").textContent || "";
+    if(!md){ showToast("Nothing to copy"); return; }
+    try {
+      await navigator.clipboard.writeText(md);
+      showToast("📋 AI Markdown copied");
+    } catch {
+      const ta = document.createElement("textarea"); ta.value = md; document.body.appendChild(ta);
+      ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
+      showToast("📋 AI Markdown copied");
+    }
+  });
+}
+
 
   // Copy Markdown
   const copyBtn = $("#btnCopyMd");

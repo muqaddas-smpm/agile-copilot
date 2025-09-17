@@ -12,7 +12,8 @@
     <div class="actions">
       <a class="btn secondary" href="index.html" title="Back to main">← Back</a>
       <button id="btnClear" class="btn secondary">Clear</button>
-      <button id="btnExportMd" class="btn">Export Markdown</button>      <button id="btnCopyMd" class="btn secondary">Copy Markdown</button> <button id="btnExportCsv" class="btn secondary">Export CSV</button> <button id="btnExportJson" class="btn secondary">Export JSON</button>  <button id="btnPrint" class="btn secondary">Print View</button>
+      <button id="btnExportMd" class="btn">Export Markdown</button>      <button id="btnCopyMd" class="btn secondary">Copy Markdown</button> <button id="btnExportCsv" class="btn secondary">Export CSV</button> <button id="btnExportJson" class="btn secondary">Export JSON</button>  <button id="btnPrint" class="btn secondary">Print View</button> <button id="btnAISummarize" class="btn">AI Summarize</button>
+
 
 
     </div>
@@ -86,9 +87,29 @@
         </table>
       </div>
     </section>
-  </main>
+ <section class="card">
+
+  <h4>AI Summary (Preview)</h4>
+  <p class="hint">Generated via OpenAI (gpt-4o-mini). Shows exact usage & cost.</p>
+  <div class="row" style="gap:12px; align-items:center;">
+    <button id="btnCopyAi" class="btn secondary">Copy AI Markdown</button>
+    <span id="aiUsage" class="hint"></span>
+  </div>
+  <pre id="aiMd" class="code" style="white-space:pre-wrap;"></pre>
+</section>
+ </main>
 
   <div id="toast" class="toast" hidden>✅ Analyzed</div>
+<section class="card">
+  <h4>AI Summary (Preview)</h4>
+  <p class="hint">Generated via OpenAI (gpt-4o-mini). Shows exact usage & cost.</p>
+  <div class="row" style="gap:12px; align-items:center;">
+    <button id="btnCopyAi" class="btn secondary">Copy AI Markdown</button>
+    <span id="aiUsage" class="hint"></span>
+  </div>
+  <pre id="aiMd" class="code" style="white-space:pre-wrap;"></pre>
+</section>
+
 
   <footer class="foot">
     <small>Day 8: parse free-form notes → D/T/B, severity, follow-ups, history & markdown export — Safe Mode.</small>
