@@ -1,3 +1,11 @@
+// Agile Copilot — Day 8 (Standup Synthesizer)
+// Full replacement for client/standup.js
+// Features: parsing D/T/B, severity scoring + badges, PM follow-ups,
+// history (localStorage), Markdown export, CSV import (Slack-like),
+// Copy Markdown, Export CSV, toast notifications, keyboard shortcuts.
+
+"use strict";
+
 // ===== Utilities =====
 function $(sel){ return document.querySelector(sel); }
 function fmtDateISO(d){ const x=(d instanceof Date)?d:new Date(d); return x.toISOString().slice(0,10); }
@@ -8,10 +16,13 @@ function download(filename, text){
   a.href=url; a.download=filename; a.click(); URL.revokeObjectURL(url);
 }
 function showToast(msg="✅ Analyzed"){
-  const t=$("#toast"); t.textContent=msg; t.hidden=false;
+  const t=$("#toast"); if(!t) return;
+  t.textContent=msg; t.hidden=false;
   t.classList.add("show");
   setTimeout(()=>{ t.classList.remove("show"); t.hidden=true; }, 1600);
 }
+function nameSafe(s){ return String(s||"").replace(/[<>&]/g, "_"); }
+function escapeHtml(s){ return String(s||"").replace(/[&<>]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[ch])); }
 
 // ===== History (localStorage) =====
 const LS_KEY="agc_standup_history";
@@ -20,12 +31,34 @@ function saveHistory(list){ localStorage.setItem(LS_KEY, JSON.stringify(list)); 
 let history = loadHistory();
 
 // ===== Parsing =====
+// Supports inline tokens (y/t/b) and free-form heuristics.
 const PERSON_RE = /^([A-Z][A-Za-z0-9_. -]{0,40})\s*[:\-—]\s*(.*)$/i;
 const TOKENS = {
   y: /(^|\b)(yesterday|y)\s*[:\-–]\s*/i,
   t: /(^|\b)(today|t)\s*[:\-–]\s*/i,
   b: /(^|\b)(blockers?|b)\s*[:\-–]\s*/i,
 };
+
+function splitTokens(str){
+  const out = {};
+  let s = " " + String(str||"");
+  const idx = [];
+  for(const key of ["y","t","b"]){
+    const re = TOKENS[key];
+    const m = re.exec(s);
+    if(m) idx.push({key, pos: m.index, len: m[0].length});
+  }
+  if(!idx.length){ return {}; }
+  idx.sort((a,b)=>a.pos-b.pos);
+  for(let i=0;i<idx.length;i++){
+    const cur = idx[i];
+    const start = cur.pos + cur.len;
+    const end = (i+1<idx.length) ? idx[i+1].pos : s.length;
+    const val = s.slice(start,end).trim().replace(/^[;,\-–—]+/,"").trim();
+    out[cur.key] = (out[cur.key] ? (out[cur.key] + "; " + val) : val);
+  }
+  return out;
+}
 
 function parseNotes(text){
   const lines = String(text||"").replace(/\r/g,"").split("\n");
@@ -55,41 +88,21 @@ function parseNotes(text){
 
     // list bullets or loose lines under current person
     if(current){
-      const parts = splitTokens(line.replace(/^[•*\-\u2022]+\s*/,""));
+      const cleaned = line.replace(/^[•*\-\u2022]+\s*/,"");
+      const parts = splitTokens(cleaned);
       if(parts.y || parts.t || parts.b){
         if(parts.y) push(current, "y", parts.y);
         if(parts.t) push(current, "t", parts.t);
         if(parts.b) push(current, "b", parts.b);
       }else{
         // heuristics
-        if(/block|blocked|waiting|dependency|review pending|qa|test\s*failure|flaky/i.test(line)) push(current,"b",line);
+        if(/block|blocked|waiting|dependency|access|permission|review pending|qa\b|test\s*failure|flaky|stuck/i.test(line)) push(current,"b",line);
         else if(/^\b(add|fix|refactor|write|review|merge|deploy|test|investigate|document|pair|polish|design|plan)\b/i.test(line)) push(current,"t",line);
         else push(current,"y",line);
       }
     }
   }
   return people;
-}
-
-function splitTokens(str){
-  const out = {};
-  let s = " " + str;
-  const idx = [];
-  for(const key of ["y","t","b"]){
-    const re = TOKENS[key];
-    const m = re.exec(s);
-    if(m) idx.push({key, pos: m.index, len: m[0].length});
-  }
-  if(!idx.length){ return {}; }
-  idx.sort((a,b)=>a.pos-b.pos);
-  for(let i=0;i<idx.length;i++){
-    const cur = idx[i];
-    const start = cur.pos + cur.len;
-    const end = (i+1<idx.length) ? idx[i+1].pos : s.length;
-    const val = s.slice(start,end).trim().replace(/^[;,\-–—]+/,"").trim();
-    out[cur.key] = (out[cur.key] ? (out[cur.key] + "; " + val) : val);
-  }
-  return out;
 }
 
 // ===== Severity scoring (0–3) =====
@@ -101,13 +114,12 @@ function scoreSeverity(text){
   if(/prod|outage|p0|sev(\s*0|1|2|3)?|deadline|cannot proceed|broken|urgent|security|data loss|customer impact/.test(t)) score = Math.max(score,3);
   return score;
 }
-function severityBadge(sev){
-  return `<span class="badge s${sev}">${sev}</span>`;
-}
+function severityBadge(sev){ return `<span class="badge s${sev}">${sev}</span>`; }
 
-// ===== Render =====
+// ===== Renderers =====
 function renderSnapshot(people){
-  const root = $("#snapshot"); root.innerHTML = "";
+  const root = $("#snapshot"); if(!root) return;
+  root.innerHTML = "";
   const names = Object.keys(people);
   if(!names.length){ root.innerHTML = '<p class="hint">(no parsed items yet)</p>'; return; }
 
@@ -133,7 +145,8 @@ function renderSnapshot(people){
 }
 
 function renderBlockers(people){
-  const root = $("#blockers"); root.innerHTML = "";
+  const root = $("#blockers"); if(!root) return;
+  root.innerHTML = "";
   const items = [];
   for(const [name,p] of Object.entries(people)){
     (p.b||[]).forEach(b => items.push({ name, text:b, sev: scoreSeverity(b) }));
@@ -150,11 +163,9 @@ function renderBlockers(people){
   root.appendChild(list);
 }
 
-function nameSafe(s){ return s.replace(/[<>&]/g, "_"); }
-function escapeHtml(s){ return s.replace(/[&<>]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[ch])); }
-
 function renderFollowups(people){
-  const root = $("#followups"); root.innerHTML = "";
+  const root = $("#followups"); if(!root) return;
+  root.innerHTML = "";
   const out = [];
   for(const [name,p] of Object.entries(people)){
     for(const b of (p.b||[])){
@@ -185,7 +196,6 @@ function toMarkdown(dateISO, people){
     md += `**Today**\n${itemsToMd(p.t)}\n`;
     md += `**Blockers**\n${itemsToMd(p.b, true)}\n\n`;
   }
-  // blockers summary
   const bl = [];
   for(const [name,p] of Object.entries(people)){
     (p.b||[]).forEach(b => bl.push({name, b, sev: scoreSeverity(b)}));
@@ -201,15 +211,12 @@ function toMarkdown(dateISO, people){
 }
 function itemsToMd(arr, withSev=false){
   if(!arr || !arr.length) return "- —\n";
-  return arr.map(x => {
-    if(withSev){ return `- [S${scoreSeverity(x)}] ${x}`; }
-    return `- ${x}`;
-  }).join("\n") + "\n";
+  return arr.map(x => withSev ? `- [S${scoreSeverity(x)}] ${x}` : `- ${x}`).join("\n") + "\n";
 }
 
 // ===== CSV import (Slack-like) =====
 function parseCsv(text){
-  const lines = text.replace(/\r/g,"").split("\n").filter(Boolean);
+  const lines = String(text||"").replace(/\r/g,"").split("\n").filter(l=>l.length>0);
   if(!lines.length) return { header: [], rows: [] };
   const header = splitCsvLine(lines[0]).map(h=>h.trim().toLowerCase());
   const rows = lines.slice(1).map(line => {
@@ -242,13 +249,12 @@ function importSlackCsvToNotes(csvText){
   const { header, rows } = parseCsv(csvText);
   if(!header.length || !rows.length) return "";
 
-  // map common header names
   const h = (name) => header.indexOf(name);
   const idxUser = [h("user"), h("username"), h("author")].find(i=>i>=0);
   const idxText = [h("text"), h("message"), h("body")].find(i=>i>=0);
   const idxTime = [h("date"), h("timestamp"), h("ts"), h("time")].find(i=>i>=0);
 
-  const bucket = {}; // name -> array of inferred items as text lines
+  const bucket = {}; // name -> inferred lines
   for(const r of rows){
     const user = (idxUser!=null ? r[header[idxUser]] : "Unknown") || "Unknown";
     const msg  = (idxText!=null ? r[header[idxText]] : "") || "";
@@ -262,7 +268,6 @@ function importSlackCsvToNotes(csvText){
     bucket[user].push(`${tag} - ${msg}${timeHint}`);
   }
 
-  // synthesize note text that our parser understands
   const lines = [];
   Object.keys(bucket).forEach(name=>{
     lines.push(`${name}: ${bucket[name].join("; ")}`);
@@ -272,7 +277,8 @@ function importSlackCsvToNotes(csvText){
 
 // ===== History UI =====
 function renderHistory(){
-  const body = $("#historyBody"); body.innerHTML = "";
+  const body = $("#historyBody"); if(!body) return;
+  body.innerHTML = "";
   if(!history.length){ body.innerHTML = `<tr><td colspan="4" class="hint">No history yet</td></tr>`; return; }
   history.forEach((h, i) => {
     const tr = document.createElement("tr");
@@ -312,56 +318,124 @@ function display(people){
 
 // ===== Wire up =====
 (function init(){
-  $("#standupDate").value = fmtDateISO(new Date());
+  const dateEl = $("#standupDate");
+  if(dateEl) dateEl.value = fmtDateISO(new Date());
 
-  $("#btnAnalyze").addEventListener("click", ()=>{
-    const raw = $("#notes").value;
-    const date = $("#standupDate").value || fmtDateISO(new Date());
-    const people = parseNotes(raw);
-    display(people);
-    const entry = { id: String(Date.now()), date, raw, people };
-    history.unshift(entry); history = history.slice(0,50);
-    saveHistory(history); renderHistory();
-    showToast("✅ Analyzed");
-  });
+  // Analyze
+  const analyzeBtn = $("#btnAnalyze");
+  if (analyzeBtn){
+    analyzeBtn.addEventListener("click", ()=>{
+      const raw = $("#notes").value;
+      const date = ($("#standupDate")?.value) || fmtDateISO(new Date());
+      const people = parseNotes(raw);
+      display(people);
+      const entry = { id: String(Date.now()), date, raw, people };
+      history.unshift(entry); history = history.slice(0,50);
+      saveHistory(history); renderHistory();
+      showToast("✅ Analyzed");
+    });
+  }
 
-  $("#btnClear").addEventListener("click", ()=>{
-    $("#notes").value = "";
-    $("#snapshot").innerHTML = "";
-    $("#blockers").innerHTML = "";
-    $("#followups").innerHTML = "";
-  });
+  // Clear
+  const clearBtn = $("#btnClear");
+  if (clearBtn){
+    clearBtn.addEventListener("click", ()=>{
+      $("#notes").value = "";
+      $("#snapshot").innerHTML = "";
+      $("#blockers").innerHTML = "";
+      $("#followups").innerHTML = "";
+    });
+  }
 
-  $("#btnExportMd").addEventListener("click", ()=>{
-    const date = $("#standupDate").value || fmtDateISO(new Date());
-    const people = parseNotes($("#notes").value);
-    const md = toMarkdown(date, people);
-    download(`standup-${date}.md`, md);
-  });
+  // Export Markdown
+  const exportMdBtn = $("#btnExportMd");
+  if (exportMdBtn){
+    exportMdBtn.addEventListener("click", ()=>{
+      const date = ($("#standupDate")?.value) || fmtDateISO(new Date());
+      const people = parseNotes($("#notes").value);
+      const md = toMarkdown(date, people);
+      download(`standup-${date}.md`, md);
+      showToast("📄 Markdown exported");
+    });
+  }
 
-  // CSV import
+  // Copy Markdown
+  const copyBtn = $("#btnCopyMd");
+  if (copyBtn){
+    copyBtn.addEventListener("click", async ()=>{
+      const date = ($("#standupDate")?.value) || fmtDateISO(new Date());
+      const people = parseNotes($("#notes").value);
+      const md = toMarkdown(date, people);
+      try {
+        await navigator.clipboard.writeText(md);
+        showToast("📋 Markdown copied");
+      } catch {
+        // Fallback
+        const ta = document.createElement("textarea");
+        ta.value = md; document.body.appendChild(ta);
+        ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
+        showToast("📋 Markdown copied");
+      }
+    });
+  }
+
+  // Export CSV
+  const exportCsvBtn = $("#btnExportCsv");
+  if (exportCsvBtn){
+    exportCsvBtn.addEventListener("click", ()=>{
+      const date = ($("#standupDate")?.value) || fmtDateISO(new Date());
+      const people = parseNotes($("#notes").value);
+      const rows = [["name","yesterday","today","blockers","max_severity"]];
+      for (const [name,p] of Object.entries(people)){
+        const y = (p.y||[]).join(" | ");
+        const t = (p.t||[]).join(" | ");
+        const b = (p.b||[]).join(" | ");
+        const maxSev = Math.max(0, ...(p.b||[]).map(scoreSeverity));
+        rows.push([name,y,t,b,String(Number.isFinite(maxSev)?maxSev:0)]);
+      }
+      const csv = rows.map(r => r.map(v => /[",\n]/.test(v) ? `"${String(v).replace(/"/g,'""')}"` : String(v)).join(",")).join("\n");
+      download(`standup-${date}.csv`, csv);
+      showToast("📄 CSV exported");
+    });
+  }
+
+  // CSV import (file input)
   const fileEl = $("#csvFile");
+  const importCsvBtn = $("#btnImportCsv");
+  if(importCsvBtn){
+    importCsvBtn.addEventListener("click", async ()=>{
+      if(!fileEl || !fileEl.files || !fileEl.files[0]){ alert("Choose a .csv file first."); return; }
+      const text = await fileEl.files[0].text();
+      const synth = importSlackCsvToNotes(text);
+      if(synth){ $("#notes").value = synth; showToast("📥 CSV imported → ready to Analyze"); }
+      else alert("Could not parse CSV.");
+    });
+  }
+
+  // CSV import (drag & drop)
   const drop = $("#dropCsv");
-  $("#btnImportCsv").addEventListener("click", async ()=>{
-    if(!fileEl.files || !fileEl.files[0]){ alert("Choose a .csv file first."); return; }
-    const text = await fileEl.files[0].text();
-    const synth = importSlackCsvToNotes(text);
-    if(synth){ $("#notes").value = synth; showToast("📥 CSV imported → ready to Analyze"); }
-    else alert("Could not parse CSV.");
-  });
-  ;["dragenter","dragover"].forEach(ev=>{
-    drop.addEventListener(ev, e=>{ e.preventDefault(); drop.classList.add("drag"); });
-  });
-  ;["dragleave","drop"].forEach(ev=>{
-    drop.addEventListener(ev, e=>{ e.preventDefault(); drop.classList.remove("drag"); });
-  });
-  drop.addEventListener("drop", async (e)=>{
-    const f = e.dataTransfer.files[0];
-    if(!f || !/\.csv$/i.test(f.name)) return;
-    const text = await f.text();
-    const synth = importSlackCsvToNotes(text);
-    if(synth){ $("#notes").value = synth; showToast("📥 CSV imported → ready to Analyze"); }
-    else alert("Could not parse CSV.");
+  if(drop){
+    ["dragenter","dragover"].forEach(ev=>{
+      drop.addEventListener(ev, e=>{ e.preventDefault(); drop.classList.add("drag"); });
+    });
+    ["dragleave","drop"].forEach(ev=>{
+      drop.addEventListener(ev, e=>{ e.preventDefault(); drop.classList.remove("drag"); });
+    });
+    drop.addEventListener("drop", async (e)=>{
+      const f = e.dataTransfer.files[0];
+      if(!f || !/\.csv$/i.test(f.name)) return;
+      const text = await f.text();
+      const synth = importSlackCsvToNotes(text);
+      if(synth){ $("#notes").value = synth; showToast("📥 CSV imported → ready to Analyze"); }
+      else alert("Could not parse CSV.");
+    });
+  }
+
+  // Keyboard shortcuts
+  document.addEventListener("keydown", (e)=>{
+    if (e.ctrlKey && e.key === "Enter"){ analyzeBtn?.click(); e.preventDefault(); }
+    if (e.altKey && (e.key === "e" || e.key === "E")){ exportMdBtn?.click(); e.preventDefault(); }
+    if (e.altKey && (e.key === "c" || e.key === "C")){ copyBtn?.click(); e.preventDefault(); }
   });
 
   renderHistory();
