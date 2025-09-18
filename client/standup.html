@@ -244,6 +244,26 @@ Bob yesterday: reviewed PR; today: merge; blockers: flaky test"></textarea>
   .history-meta { color:#777; font-size:12px; }
   .history-actions button { margin-left:6px; }
 </style>
+<section id="retroSection" style="border:1px solid #ddd;padding:10px;margin-top:12px;border-radius:8px;">
+  <h3 style="margin-top:0;">Retrospective (offline)</h3>
+
+  <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+    <label>Days to include:
+      <input id="retroDays" type="number" min="3" max="30" value="7" style="width:64px;">
+    </label>
+    <button id="buildRetroBtn" type="button">Build Retrospective</button>
+    <button id="downloadRetroBtn" type="button">Download Retro .md</button>
+    <button id="saveRetroBtn" type="button" title="Store in History">Save to History</button>
+  </div>
+
+  <details style="margin-bottom:8px;">
+    <summary>Optional: paste extra team notes (any format)</summary>
+    <textarea id="retroNotes" rows="6" style="width:100%;"></textarea>
+  </details>
+
+  <p style="color:#666;margin:6px 0;">Output:</p>
+  <pre id="retroOutput" style="white-space:pre-wrap;background:#fafafa;border:1px solid #eee;padding:10px;border-radius:6px;min-height:100px;"></pre>
+</section>
 
 </body>
 </html>
