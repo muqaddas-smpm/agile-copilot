@@ -224,5 +224,26 @@ Bob yesterday: reviewed PR; today: merge; blockers: flaky test"></textarea>
     });
   </script>
 <script src="js/export.js"></script>
+<section id="historySection" style="border:1px solid #ddd;padding:10px;margin-top:12px;border-radius:8px;">
+  <h3 style="margin-top:0;">History (<span id="historyCount">0</span>)</h3>
+  <p id="historyEmpty" style="color:#666;margin:6px 0;">No saved summaries yet.</p>
+
+  <div style="display:flex;gap:8px;margin-bottom:10px;">
+    <button id="saveHistoryBtn" type="button">Save to History</button>
+    <button id="clearHistoryBtn" type="button" title="Remove all saved summaries">Clear All</button>
+  </div>
+
+  <ul id="historyList" style="list-style:none;padding-left:0;margin:0;display:flex;flex-direction:column;gap:8px;"></ul>
+</section>
+
+<style>
+  /* tiny styles to make list readable */
+  .history-item { border:1px solid #eee; padding:8px; border-radius:6px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .history-header { display:flex; flex-direction:column; }
+  .history-title { font-weight:600; }
+  .history-meta { color:#777; font-size:12px; }
+  .history-actions button { margin-left:6px; }
+</style>
+
 </body>
 </html>
