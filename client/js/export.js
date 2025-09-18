@@ -11,7 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const yyyy = date.getFullYear();
     const mm = String(date.getMonth() + 1).padStart(2, '0');
     const dd = String(date.getDate()).padStart(2, '0');
-    const fileName = `standup-${yyyy}-${mm}-${dd}.md`;
+    const fileName = `agile-copilot-standup-${yyyy}-${mm}-${dd}.md`;
 
     // 2) Grab the summary text from the page (it tries multiple common spots)
     const summaryText = getSummaryText();
@@ -22,12 +22,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 3) Build simple Markdown content
     const md = [
-      `# Daily Standup Summary — ${yyyy}-${mm}-${dd}`,
-      '',
-      '---',
-      '',
-      summaryText.trim()
-    ].join('\r\n');
+  '---',
+  `date: ${yyyy}-${mm}-${dd}`,
+  'project: Agile Copilot',
+  'format: standup',
+  '---',
+  '',
+  `# Daily Standup Summary — ${yyyy}-${mm}-${dd}`,
+  '',
+  '---',
+  '',
+  summaryText.trim()
+].join('\r\n');
 
     // 4) Trigger a file download (works from file:/// too)
     const blob = new Blob([md], { type: 'text/markdown' });
