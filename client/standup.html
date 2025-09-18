@@ -2,120 +2,227 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Agile Copilot — Day 8 (Standup Synthesizer)</title>
+  <title>Agile Copilot — Standup Summarizer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="styles.css" />
+  <style>
+    :root { --bg:#ffffff; --fg:#111827; --muted:#6b7280; --card:#f6f8fa; --ok:#065f46; --bad:#7f1d1d; }
+    * { box-sizing: border-box; }
+    body { margin: 24px; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; color: var(--fg); background: var(--bg); }
+    h1 { margin: 0 0 8px; font-size: 22px; }
+    .subtitle { color: var(--muted); margin-bottom: 18px; }
+    .row { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+    label { font-size: 14px; color: var(--muted); }
+    input[type="date"], input[type="text"] { padding: 8px; border: 1px solid #ddd; border-radius: 8px; }
+    textarea { width: 100%; height: 200px; padding: 12px; border: 1px solid #ddd; border-radius: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+    button { padding: 9px 14px; border-radius: 10px; border: 1px solid #e5e7eb; background: #fff; cursor: pointer; }
+    button.primary { background: #111827; color: #fff; border-color: #111827; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .bar { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 16px; }
+    .card { background: var(--card); border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; }
+    pre { white-space: pre-wrap; margin: 0; }
+    .status { font-size: 13px; }
+    .status.ok { color: var(--ok); }
+    .status.bad { color: var(--bad); }
+    .muted { color: var(--muted); font-size: 13px; }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+    @media (min-width: 900px) { .grid { grid-template-columns: 1fr 1fr; } }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+  </style>
 </head>
 <body>
-  <header class="topbar">
-    <h1>Daily Standup Synthesizer</h1>
-    <div class="actions">
-      <a class="btn secondary" href="index.html" title="Back to main">← Back</a>
-      <button id="btnClear" class="btn secondary">Clear</button>
-      <button id="btnExportMd" class="btn">Export Markdown</button>      <button id="btnCopyMd" class="btn secondary">Copy Markdown</button> <button id="btnExportCsv" class="btn secondary">Export CSV</button> <button id="btnExportJson" class="btn secondary">Export JSON</button>  <button id="btnPrint" class="btn secondary">Print View</button> <button id="btnAISummarize" class="btn">AI Summarize</button>
+  <h1>Agile Copilot — Standup Summarizer</h1>
+  <div class="subtitle">Uses <span class="mono">/api/ai/standup</span> on your local server.</div>
 
+  <div class="row">
+    <label>API Base:
+      <input id="apiBase" type="text" style="width:360px" />
+    </label>
+    <button id="btnCheck">Check Server</button>
+    <span id="srvStatus" class="status muted">not checked</span>
+  </div>
 
+  <div class="row">
+    <label>Date:&nbsp;<input id="date" type="date" /></label>
+    <div class="muted">Leave blank to auto-fill today.</div>
+  </div>
 
+  <div class="row" style="align-items:flex-start">
+    <div style="flex:1 1 600px">
+      <label>Notes</label>
+      <textarea id="notes" placeholder="Alice: y - fixed login; t - write tests; b - waiting on @Bob for API.
+Bob yesterday: reviewed PR; today: merge; blockers: flaky test"></textarea>
+      <div class="bar">
+        <button id="btnSample">Use Sample</button>
+        <button class="primary" id="btnSummarize">AI Summarize</button> <button id="downloadMdBtn" type="button">Download .md</button> 
+        <span id="busy" class="muted" style="display:none">working…</span>
+      </div>
+      <div class="muted">Notes autosave locally.</div>
     </div>
-  </header>
-
-  <main class="container">
-    <!-- Input -->
-    <section class="card">
-      <h3>Paste Standup Notes</h3>
-      <p class="hint">One block of text is fine. Patterns like:<br/>
-        <code>Alice: y - fixed login; t - add tests; b - waiting for API key</code><br/>
-        <code>Bob yesterday: code review; today: merge PR; blockers: flaky test</code></p>
-
-      <div class="row">
-        <textarea id="notes" rows="10" style="width:100%;" placeholder="Paste your team notes here..."></textarea>
-      </div>
-
-      <div class="row" style="margin-top:10px; gap:12px; align-items:center;">
-        <label for="standupDate"><strong>Date:</strong></label>
-        <input id="standupDate" type="date" />
-        <button id="btnAnalyze" class="btn">Analyze Notes</button>
-      </div>
-
-      <hr class="divider"/>
-
-      <h4>Optional: Import Slack CSV</h4>
-      <p class="hint">Understands headers like <em>user,text,date</em> or <em>user,message,timestamp/ts</em> (UNIX seconds or ms). We’ll synthesize D/T/B automatically.</p>
-      <div class="row" style="gap:12px; align-items:center;">
-        <input type="file" id="csvFile" accept=".csv" />
-        <button id="btnImportCsv" class="btn secondary">Import CSV</button>
-      </div>
-      <div id="dropCsv" class="dropzone" title="Drop a .csv file here">Drop a .csv file here</div>
-    </section>
-
-    <!-- Legend -->
-    <section class="card">
-      <h4>Severity Legend</h4>
-      <p>
-        <span class="badge s0">0</span> none &nbsp;
-        <span class="badge s1">1</span> minor &nbsp;
-        <span class="badge s2">2</span> blocker &nbsp;
-        <span class="badge s3">3</span> critical
-      </p>
-    </section>
-
-    <!-- Results -->
-    <section class="grid">
-      <div class="card">
-        <h4>Team Snapshot (Yesterday / Today / Blockers)</h4>
-        <div id="snapshot"></div>
-      </div>
-
-      <div class="card">
-        <h4>Blockers (Severity 0–3)</h4>
-        <div id="blockers"></div>
-      </div>
-
-      <div class="card">
-        <h4>PM Follow-ups (Auto-suggested)</h4>
-        <ol id="followups"></ol>
-      </div>
-
-      <div class="card">
-        <h4>History (Local Only)</h4>
-        <p class="hint">Stored in your browser (localStorage). Click “View” to reload.</p>
-        <table class="table">
-          <thead>
-            <tr><th>#</th><th>Date</th><th>People</th><th>Actions</th></tr>
-          </thead>
-          <tbody id="historyBody"></tbody>
-        </table>
-      </div>
-    </section>
- <section class="card">
-
-  <h4>AI Summary (Preview)</h4>
-  <p class="hint">Generated via OpenAI (gpt-4o-mini). Shows exact usage & cost.</p>
-  <div class="row" style="gap:12px; align-items:center;">
-    <button id="btnCopyAi" class="btn secondary">Copy AI Markdown</button>
-    <span id="aiUsage" class="hint"></span>
   </div>
-  <pre id="aiMd" class="code" style="white-space:pre-wrap;"></pre>
-</section>
- </main>
 
-  <div id="toast" class="toast" hidden>✅ Analyzed</div>
-<section class="card">
-  <h4>AI Summary (Preview)</h4>
-  <p class="hint">Generated via OpenAI (gpt-4o-mini). Shows exact usage & cost.</p>
-  <div class="row" style="gap:12px; align-items:center;">
-    <button id="btnCopyAi" class="btn secondary">Copy AI Markdown</button>
-    <span id="aiUsage" class="hint"></span>
+  <div class="grid">
+    <div>
+      <h2 style="margin:0 0 8px">Markdown Output</h2>
+      <div class="bar">
+        <button id="btnCopy">Copy Markdown</button>
+      </div>
+      <div id="mdCard" class="card"><pre id="mdOut">(result will appear here)</pre></div>
+    </div>
+
+    <div>
+      <h2 style="margin:0 0 8px">Usage &amp; Cost</h2>
+      <div id="usageCard" class="card">
+        <div id="usageOut" class="mono muted">—</div>
+      </div>
+      <div style="margin-top:8px" class="muted">
+        Tip: You can also open with a query: <span class="mono">standup.html?api=http://localhost:3003</span>
+      </div>
+    </div>
   </div>
-  <pre id="aiMd" class="code" style="white-space:pre-wrap;"></pre>
-</section>
 
+  <script>
+    // --- Config (default to 3003, remember last) ---
+    const qsApi = new URLSearchParams(location.search).get('api');
+    const API_BASE_DEFAULT = 'http://localhost:3003';
+    const savedBase = localStorage.getItem('api_base');
+    const API_BASE = qsApi || savedBase || API_BASE_DEFAULT;
 
-  <footer class="foot">
-    <small>Day 8: parse free-form notes → D/T/B, severity, follow-ups, history & markdown export — Safe Mode.</small>
-  </footer>
+    // --- Helpers ---
+    const $ = (id) => document.getElementById(id);
+    const todayISO = () => new Date().toISOString().slice(0, 10);
 
-  <script src="standup.js"></script>
+    function setStatus(msg, ok = null) {
+      const el = $('srvStatus');
+      el.textContent = msg;
+      el.classList.remove('ok', 'bad', 'muted');
+      if (ok === true) el.classList.add('ok');
+      else if (ok === false) el.classList.add('bad');
+      else el.classList.add('muted');
+    }
+    function setBusy(isBusy) {
+      $('btnSummarize').disabled = isBusy;
+      $('btnCheck').disabled = isBusy;
+      $('btnSample').disabled = isBusy;
+      $('busy').style.display = isBusy ? '' : 'none';
+    }
+    function setMarkdown(text) { $('mdOut').textContent = text || ''; }
+    function setUsage(model, usage, cost) {
+      const u = usage || {};
+      const input = u.input_tokens ?? u.prompt_tokens ?? 0;
+      const output = u.output_tokens ?? u.completion_tokens ?? 0;
+      const total = u.total_tokens ?? (input + output);
+      const costStr = (cost != null) ? Number(cost).toFixed(6) : '0.000000';
+      $('usageOut').textContent = `Model: ${model || 'n/a'} | input_tokens=${input}, output_tokens=${output}, total=${total} | est. $${costStr}`;
+      $('usageOut').classList.remove('muted');
+    }
+
+    // --- Init ---
+    (function init() {
+      $('apiBase').value = API_BASE;
+      $('date').placeholder = todayISO();
+      const saved = localStorage.getItem('standup_notes_v1');
+      if (saved) $('notes').value = saved;
+      $('notes').addEventListener('input', () => {
+        localStorage.setItem('standup_notes_v1', $('notes').value);
+      });
+      $('apiBase').addEventListener('change', e => {
+        const base = (e.target.value || '').trim();
+        if (base) localStorage.setItem('api_base', base);
+      });
+    })();
+
+    // --- Actions ---
+    $('btnSample').addEventListener('click', () => {
+      const sample = [
+        'Alice: y - fixed login; t - write tests; b - waiting on @Bob for API.',
+        'Bob yesterday: reviewed PR; today: merge; blockers: flaky test',
+        'Carol: y - refined user stories; t - sync with QA; b - none',
+        'QA Team: y - executed 15 test cases (2 failed); t - rerun after hotfix; b - env instability',
+      ].join('\n');
+      $('notes').value = sample;
+      localStorage.setItem('standup_notes_v1', sample);
+    });
+
+    $('btnCheck').addEventListener('click', async () => {
+      setBusy(true);
+      try {
+        const base = $('apiBase').value.trim() || API_BASE_DEFAULT;
+
+        const h = await fetch(`${base}/health`).then(r => r.json());
+        const d = await fetch(`${base}/diag`).then(r => r.json());
+        const tResp = await fetch(`${base}/diag/test`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        const t = await tResp.json().catch(() => ({}));
+
+        if (tResp.ok && t.ok) {
+          setStatus(`OK • port=${h.port} • mode=${d.mode} • sdk=${d.sdkVersion} • hasKey=${d.hasKey} • model=${d.modelDefault}`, true);
+          // remember working base
+          localStorage.setItem('api_base', base);
+        } else {
+          setStatus(`Diag/test failed: ${t.detail || tResp.statusText}`, false);
+        }
+      } catch (e) {
+        setStatus(`Server check error: ${e.message || e}`, false);
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    $('btnSummarize').addEventListener('click', async () => {
+      setBusy(true);
+      setMarkdown('');
+      $('usageOut').textContent = '—';
+      $('usageOut').classList.add('muted');
+
+      try {
+        const base = $('apiBase').value.trim() || API_BASE_DEFAULT;
+        const date = $('date').value || todayISO();
+        const notes = $('notes').value || '';
+
+        const r = await fetch(`${base}/api/ai/standup`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ date, notes }),
+        });
+
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || !data.ok) {
+          const msg = data?.detail || r.statusText || 'Unknown error';
+          setMarkdown(`Error: ${msg}`);
+          setStatus('Summarize failed', false);
+          return;
+        }
+
+        setMarkdown(data.markdown || '');
+        setUsage(data.model, data.usage, data.estimated_cost_usd);
+        setStatus('Summarize complete', true);
+        // remember working base
+        localStorage.setItem('api_base', base);
+      } catch (e) {
+        setMarkdown(`Error: ${e.message || e}`);
+        setStatus('Summarize failed', false);
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    $('btnCopy').addEventListener('click', async () => {
+      const text = $('mdOut').textContent || '';
+      try {
+        await navigator.clipboard.writeText(text);
+        const old = $('btnCopy').textContent;
+        $('btnCopy').textContent = 'Copied!';
+        setTimeout(() => $('btnCopy').textContent = old, 900);
+      } catch {
+        const r = document.createRange();
+        r.selectNodeContents($('mdOut'));
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(r);
+        try { document.execCommand('copy'); } catch {}
+        sel.removeAllRanges();
+      }
+    });
+  </script>
+<script src="js/export.js"></script>
 </body>
 </html>
-
