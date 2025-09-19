@@ -224,6 +224,7 @@ Bob yesterday: reviewed PR; today: merge; blockers: flaky test"></textarea>
     });
   </script>
 <script src="js/export.js"></script>
+<!-- History -->
 <section id="historySection" style="border:1px solid #ddd;padding:10px;margin-top:12px;border-radius:8px;">
   <h3 style="margin-top:0;">History (<span id="historyCount">0</span>)</h3>
   <p id="historyEmpty" style="color:#666;margin:6px 0;">No saved summaries yet.</p>
@@ -244,6 +245,8 @@ Bob yesterday: reviewed PR; today: merge; blockers: flaky test"></textarea>
   .history-meta { color:#777; font-size:12px; }
   .history-actions button { margin-left:6px; }
 </style>
+
+<!-- Retrospective -->
 <section id="retroSection" style="border:1px solid #ddd;padding:10px;margin-top:12px;border-radius:8px;">
   <h3 style="margin-top:0;">Retrospective (offline)</h3>
 
@@ -254,6 +257,7 @@ Bob yesterday: reviewed PR; today: merge; blockers: flaky test"></textarea>
     <button id="buildRetroBtn" type="button">Build Retrospective</button>
     <button id="downloadRetroBtn" type="button">Download Retro .md</button>
     <button id="saveRetroBtn" type="button" title="Store in History">Save to History</button>
+    <button id="serverRetroBtn" type="button" title="Build on server (DEMO-safe)">Use Server Retro</button>
   </div>
 
   <details style="margin-bottom:8px;">
@@ -265,6 +269,7 @@ Bob yesterday: reviewed PR; today: merge; blockers: flaky test"></textarea>
   <pre id="retroOutput" style="white-space:pre-wrap;background:#fafafa;border:1px solid #eee;padding:10px;border-radius:6px;min-height:100px;"></pre>
 </section>
 
+<!-- Diff View -->
 <section id="diffSection" style="border:1px solid #ddd;padding:10px;margin-top:12px;border-radius:8px;">
   <h3 style="margin-top:0;">Diff View (compare two saved summaries)</h3>
 
@@ -284,12 +289,12 @@ Bob yesterday: reviewed PR; today: merge; blockers: flaky test"></textarea>
   <pre id="diffOutput" style="white-space:pre-wrap;background:#fafafa;border:1px solid #eee;padding:10px;border-radius:6px;min-height:100px;"></pre>
 </section>
 
+<!-- single includes, in this order -->
 <script src="js/export.js"></script>
 <script src="js/history.js"></script>
 <script src="js/retro.js"></script>
 <script src="js/retro-server.js"></script>
 <script src="js/diff.js"></script>
-
 
 </body>
 </html>
