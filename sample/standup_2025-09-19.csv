@@ -1,0 +1,4 @@
+﻿name,yesterday,today,blockers
+Alice,Reviewed PR#142 and fixed flaky test,Finalize pagination component,waiting on UX approval
+Bob,Migrated API routes to v2,Write integration tests for upload endpoint,none
+Carol,Analyzed prod error rates and created dashboard,Roll out alert thresholds to staging,dependency on infra secret rotation

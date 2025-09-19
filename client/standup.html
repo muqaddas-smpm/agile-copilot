@@ -5,7 +5,7 @@
   <title>Agile Copilot — Standup Summarizer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root { --bg:#ffffff; --fg:#111827; --muted:#6b7280; --card:#f6f8fa; --ok:#065f46; --bad:#7f1d1d; }
+    :root { --bg:#ffffff; --fg:#111827; --muted:#6b7280; --card:#f6f8fa; --ok:#065f46; --bad:#7f1d1d; --border:#e5e7eb; }
     * { box-sizing: border-box; }
     body { margin: 24px; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; color: var(--fg); background: var(--bg); }
     h1 { margin: 0 0 8px; font-size: 22px; }
@@ -13,12 +13,12 @@
     .row { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
     label { font-size: 14px; color: var(--muted); }
     input[type="date"], input[type="text"] { padding: 8px; border: 1px solid #ddd; border-radius: 8px; }
-    textarea { width: 100%; height: 200px; padding: 12px; border: 1px solid #ddd; border-radius: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+    textarea { width: 100%; height: 200px; padding: 12px; border: 1px solid #ddd; border-radius: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; background:#fff; }
     button { padding: 9px 14px; border-radius: 10px; border: 1px solid #e5e7eb; background: #fff; cursor: pointer; }
     button.primary { background: #111827; color: #fff; border-color: #111827; }
     button:disabled { opacity: 0.6; cursor: not-allowed; }
     .bar { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 16px; }
-    .card { background: var(--card); border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
     pre { white-space: pre-wrap; margin: 0; }
     .status { font-size: 13px; }
     .status.ok { color: var(--ok); }
@@ -31,7 +31,7 @@
 </head>
 <body>
   <h1>Agile Copilot — Standup Summarizer</h1>
-  <div class="subtitle">Uses <span class="mono">/api/ai/standup</span> on your local server.</div>
+  <div class="subtitle">Uses <span class="mono">POST /api/standup/summarize</span> on your local server.</div>
 
   <div class="row">
     <label>API Base:
@@ -53,7 +53,8 @@
 Bob yesterday: reviewed PR; today: merge; blockers: flaky test"></textarea>
       <div class="bar">
         <button id="btnSample">Use Sample</button>
-        <button class="primary" id="btnSummarize">AI Summarize</button> <button id="downloadMdBtn" type="button">Download .md</button> 
+        <button class="primary" id="btnSummarize">AI Summarize</button>
+        <button id="downloadMdBtn" type="button">Download .md</button>
         <span id="busy" class="muted" style="display:none">working…</span>
       </div>
       <div class="muted">Notes autosave locally.</div>
@@ -112,8 +113,45 @@ Bob yesterday: reviewed PR; today: merge; blockers: flaky test"></textarea>
       const output = u.output_tokens ?? u.completion_tokens ?? 0;
       const total = u.total_tokens ?? (input + output);
       const costStr = (cost != null) ? Number(cost).toFixed(6) : '0.000000';
-      $('usageOut').textContent = `Model: ${model || 'n/a'} | input_tokens=${input}, output_tokens=${output}, total=${total} | est. $${costStr}`;
+      $('usageOut').textContent = `Model: ${model || 'offline'} | input_tokens=${input}, output_tokens=${output}, total=${total} | est. $${costStr}`;
       $('usageOut').classList.remove('muted');
+    }
+
+    // Parse free-form notes into rows for the offline summarizer
+    // Supports tokens: y / yesterday, t / today, b / blockers
+    function notesToRows(notesText) {
+      const rows = [];
+      const lines = (notesText || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      const tokenRe = /(?:^|\s)(y(?:esterday)?|t(?:oday)?|b(?:lockers?)?)\s*[-:]\s*([^;]+)(?=;|$)/gi;
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        // name before first colon (fallback to "Entry N")
+        const colonIdx = line.indexOf(':');
+        let name = 'Entry ' + (i + 1);
+        let rest = line;
+        if (colonIdx > -1 && colonIdx < 40) {
+          name = line.slice(0, colonIdx).trim();
+          rest = line.slice(colonIdx + 1);
+        }
+        let y = '', t = '', b = '';
+
+        // Collect tokened segments like "y - fixed", "today: write tests", "b - waiting…"
+        let m;
+        while ((m = tokenRe.exec(rest)) !== null) {
+          const key = m[1].toLowerCase()[0]; // 'y' | 't' | 'b'
+          const val = (m[2] || '').trim();
+          if (!val) continue;
+          if (key === 'y') y = y ? (y + '; ' + val) : val;
+          if (key === 't') t = t ? (t + '; ' + val) : val;
+          if (key === 'b') b = b ? (b + '; ' + val) : val;
+        }
+
+        // If nothing matched tokens, put full text as "today"
+        if (!y && !t && !b) t = rest.trim();
+
+        rows.push({ name, yesterday: y, today: t, blockers: b });
+      }
+      return rows;
     }
 
     // --- Init ---
@@ -148,18 +186,20 @@ Bob yesterday: reviewed PR; today: merge; blockers: flaky test"></textarea>
       try {
         const base = $('apiBase').value.trim() || API_BASE_DEFAULT;
 
-        const h = await fetch(`${base}/health`).then(r => r.json());
+        // Our server exposes /diag (includes port, safeMode, hasKey, modelDefault)
         const d = await fetch(`${base}/diag`).then(r => r.json());
-        const tResp = await fetch(`${base}/diag/test`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-        const t = await tResp.json().catch(() => ({}));
 
-        if (tResp.ok && t.ok) {
-          setStatus(`OK • port=${h.port} • mode=${d.mode} • sdk=${d.sdkVersion} • hasKey=${d.hasKey} • model=${d.modelDefault}`, true);
-          // remember working base
-          localStorage.setItem('api_base', base);
-        } else {
-          setStatus(`Diag/test failed: ${t.detail || tResp.statusText}`, false);
+        // If in SAFE_MODE or no key, we're OK in offline mode; otherwise verify key with /diag/test
+        let mode = (d.safeMode || !d.hasKey) ? 'offline' : 'openai';
+        if (mode === 'openai') {
+          try {
+            const tResp = await fetch(`${base}/diag/test`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+            if (!tResp.ok) mode = 'offline';
+          } catch { mode = 'offline'; }
         }
+
+        setStatus(`OK • port=${d.port} • mode=${mode} • hasKey=${d.hasKey} • model=${d.modelDefault}`, true);
+        localStorage.setItem('api_base', base);
       } catch (e) {
         setStatus(`Server check error: ${e.message || e}`, false);
       } finally {
@@ -178,24 +218,31 @@ Bob yesterday: reviewed PR; today: merge; blockers: flaky test"></textarea>
         const date = $('date').value || todayISO();
         const notes = $('notes').value || '';
 
-        const r = await fetch(`${base}/api/ai/standup`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ date, notes }),
-        });
+        // Build rows from notes; server expects CSV upload OR rowsJson array
+        const rows = notesToRows(notes);
+        if (!rows.length) {
+          setMarkdown('Error: please enter some notes.');
+          setStatus('Summarize failed', false);
+          return;
+        }
 
+        const fd = new FormData();
+        fd.append('rowsJson', JSON.stringify(rows));
+        fd.append('notes', `Standup date: ${date}. ${notes}`);
+
+        const r = await fetch(`${base}/api/standup/summarize`, { method: 'POST', body: fd });
         const data = await r.json().catch(() => ({}));
         if (!r.ok || !data.ok) {
-          const msg = data?.detail || r.statusText || 'Unknown error';
+          const msg = data?.error || data?.detail || r.statusText || 'Unknown error';
           setMarkdown(`Error: ${msg}`);
           setStatus('Summarize failed', false);
           return;
         }
 
-        setMarkdown(data.markdown || '');
-        setUsage(data.model, data.usage, data.estimated_cost_usd);
+        // Our endpoint returns { ok, mode, summary }
+        setMarkdown(data.summary || '');
+        setUsage(data.mode === 'openai' ? (data.model || 'gpt-4o-mini') : 'offline', data.usage, data.estimated_cost_usd);
         setStatus('Summarize complete', true);
-        // remember working base
         localStorage.setItem('api_base', base);
       } catch (e) {
         setMarkdown(`Error: ${e.message || e}`);
@@ -223,78 +270,69 @@ Bob yesterday: reviewed PR; today: merge; blockers: flaky test"></textarea>
       }
     });
   </script>
-<script src="js/export.js"></script>
-<!-- History -->
-<section id="historySection" style="border:1px solid #ddd;padding:10px;margin-top:12px;border-radius:8px;">
-  <h3 style="margin-top:0;">History (<span id="historyCount">0</span>)</h3>
-  <p id="historyEmpty" style="color:#666;margin:6px 0;">No saved summaries yet.</p>
 
-  <div style="display:flex;gap:8px;margin-bottom:10px;">
-    <button id="saveHistoryBtn" type="button">Save to History</button>
-    <button id="clearHistoryBtn" type="button" title="Remove all saved summaries">Clear All</button>
-  </div>
+  <!-- History -->
+  <section id="historySection" style="border:1px solid #ddd;padding:10px;margin-top:12px;border-radius:8px;">
+    <h3 style="margin-top:0;">History (<span id="historyCount">0</span>)</h3>
+    <p id="historyEmpty" style="color:#666;margin:6px 0;">No saved summaries yet.</p>
+    <div style="display:flex;gap:8px;margin-bottom:10px;">
+      <button id="saveHistoryBtn" type="button">Save to History</button>
+      <button id="clearHistoryBtn" type="button" title="Remove all saved summaries">Clear All</button>
+    </div>
+    <ul id="historyList" style="list-style:none;padding-left:0;margin:0;display:flex;flex-direction:column;gap:8px;"></ul>
+  </section>
 
-  <ul id="historyList" style="list-style:none;padding-left:0;margin:0;display:flex;flex-direction:column;gap:8px;"></ul>
-</section>
+  <style>
+    .history-item { border:1px solid #eee; padding:8px; border-radius:6px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .history-header { display:flex; flex-direction:column; }
+    .history-title { font-weight:600; }
+    .history-meta { color:#777; font-size:12px; }
+    .history-actions button { margin-left:6px; }
+  </style>
 
-<style>
-  /* tiny styles to make list readable */
-  .history-item { border:1px solid #eee; padding:8px; border-radius:6px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
-  .history-header { display:flex; flex-direction:column; }
-  .history-title { font-weight:600; }
-  .history-meta { color:#777; font-size:12px; }
-  .history-actions button { margin-left:6px; }
-</style>
+  <!-- Retrospective -->
+  <section id="retroSection" style="border:1px solid #ddd;padding:10px;margin-top:12px;border-radius:8px;">
+    <h3 style="margin-top:0;">Retrospective (offline)</h3>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+      <label>Days to include:
+        <input id="retroDays" type="number" min="3" max="30" value="7" style="width:64px;">
+      </label>
+      <button id="buildRetroBtn" type="button">Build Retrospective</button>
+      <button id="downloadRetroBtn" type="button">Download Retro .md</button>
+      <button id="saveRetroBtn" type="button" title="Store in History">Save to History</button>
+      <button id="serverRetroBtn" type="button" title="Build on server (DEMO-safe)">Use Server Retro</button>
+    </div>
+    <details style="margin-bottom:8px;">
+      <summary>Optional: paste extra team notes (any format)</summary>
+      <textarea id="retroNotes" rows="6" style="width:100%;"></textarea>
+    </details>
+    <p style="color:#666;margin:6px 0;">Output:</p>
+    <pre id="retroOutput" style="white-space:pre-wrap;background:#fafafa;border:1px solid #eee;padding:10px;border-radius:6px;min-height:100px;"></pre>
+  </section>
 
-<!-- Retrospective -->
-<section id="retroSection" style="border:1px solid #ddd;padding:10px;margin-top:12px;border-radius:8px;">
-  <h3 style="margin-top:0;">Retrospective (offline)</h3>
+  <!-- Diff View -->
+  <section id="diffSection" style="border:1px solid #ddd;padding:10px;margin-top:12px;border-radius:8px;">
+    <h3 style="margin-top:0;">Diff View (compare two saved summaries)</h3>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+      <label>Summary A:
+        <select id="diffA" style="min-width:320px;"></select>
+      </label>
+      <label>Summary B:
+        <select id="diffB" style="min-width:320px;"></select>
+      </label>
+      <button id="diffCompareBtn" type="button">Compare</button>
+      <button id="diffLoadABtn" type="button" title="Load A into page">Load A</button>
+      <button id="diffLoadBBtn" type="button" title="Load B into page">Load B</button>
+    </div>
+    <p style="color:#666;margin:6px 0;">Output:</p>
+    <pre id="diffOutput" style="white-space:pre-wrap;background:#fafafa;border:1px solid #eee;padding:10px;border-radius:6px;min-height:100px;"></pre>
+  </section>
 
-  <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
-    <label>Days to include:
-      <input id="retroDays" type="number" min="3" max="30" value="7" style="width:64px;">
-    </label>
-    <button id="buildRetroBtn" type="button">Build Retrospective</button>
-    <button id="downloadRetroBtn" type="button">Download Retro .md</button>
-    <button id="saveRetroBtn" type="button" title="Store in History">Save to History</button>
-    <button id="serverRetroBtn" type="button" title="Build on server (DEMO-safe)">Use Server Retro</button>
-  </div>
-
-  <details style="margin-bottom:8px;">
-    <summary>Optional: paste extra team notes (any format)</summary>
-    <textarea id="retroNotes" rows="6" style="width:100%;"></textarea>
-  </details>
-
-  <p style="color:#666;margin:6px 0;">Output:</p>
-  <pre id="retroOutput" style="white-space:pre-wrap;background:#fafafa;border:1px solid #eee;padding:10px;border-radius:6px;min-height:100px;"></pre>
-</section>
-
-<!-- Diff View -->
-<section id="diffSection" style="border:1px solid #ddd;padding:10px;margin-top:12px;border-radius:8px;">
-  <h3 style="margin-top:0;">Diff View (compare two saved summaries)</h3>
-
-  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
-    <label>Summary A:
-      <select id="diffA" style="min-width:320px;"></select>
-    </label>
-    <label>Summary B:
-      <select id="diffB" style="min-width:320px;"></select>
-    </label>
-    <button id="diffCompareBtn" type="button">Compare</button>
-    <button id="diffLoadABtn" type="button" title="Load A into page">Load A</button>
-    <button id="diffLoadBBtn" type="button" title="Load B into page">Load B</button>
-  </div>
-
-  <p style="color:#666;margin:6px 0;">Output:</p>
-  <pre id="diffOutput" style="white-space:pre-wrap;background:#fafafa;border:1px solid #eee;padding:10px;border-radius:6px;min-height:100px;"></pre>
-</section>
-
-<!-- single includes, in this order -->
-<script src="js/export.js"></script>
-<script src="js/history.js"></script>
-<script src="js/retro.js"></script>
-<script src="js/retro-server.js"></script>
-<script src="js/diff.js"></script>
-
+  <!-- Single includes, in this order (no duplicates) -->
+  <script src="js/export.js"></script>
+  <script src="js/history.js"></script>
+  <script src="js/retro.js"></script>
+  <script src="js/retro-server.js"></script>
+  <script src="js/diff.js"></script>
 </body>
 </html>
