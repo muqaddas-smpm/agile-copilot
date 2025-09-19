@@ -265,5 +265,31 @@ Bob yesterday: reviewed PR; today: merge; blockers: flaky test"></textarea>
   <pre id="retroOutput" style="white-space:pre-wrap;background:#fafafa;border:1px solid #eee;padding:10px;border-radius:6px;min-height:100px;"></pre>
 </section>
 
+<section id="diffSection" style="border:1px solid #ddd;padding:10px;margin-top:12px;border-radius:8px;">
+  <h3 style="margin-top:0;">Diff View (compare two saved summaries)</h3>
+
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
+    <label>Summary A:
+      <select id="diffA" style="min-width:320px;"></select>
+    </label>
+    <label>Summary B:
+      <select id="diffB" style="min-width:320px;"></select>
+    </label>
+    <button id="diffCompareBtn" type="button">Compare</button>
+    <button id="diffLoadABtn" type="button" title="Load A into page">Load A</button>
+    <button id="diffLoadBBtn" type="button" title="Load B into page">Load B</button>
+  </div>
+
+  <p style="color:#666;margin:6px 0;">Output:</p>
+  <pre id="diffOutput" style="white-space:pre-wrap;background:#fafafa;border:1px solid #eee;padding:10px;border-radius:6px;min-height:100px;"></pre>
+</section>
+
+<script src="js/export.js"></script>
+<script src="js/history.js"></script>
+<script src="js/retro.js"></script>
+<script src="js/retro-server.js"></script>
+<script src="js/diff.js"></script>
+
+
 </body>
 </html>
